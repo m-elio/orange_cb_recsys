@@ -3,6 +3,8 @@ import pandas as pd
 from orange_cb_recsys.recsys import RecSys, RecSysConfig, ClassifierRecommender
 from orange_cb_recsys.recsys.ranking_algorithms.classifier import CentroidVector
 import numpy as np
+import os
+import lzma
 
 from orange_cb_recsys.recsys.ranking_algorithms.classifier import GaussianProcess
 
@@ -39,8 +41,15 @@ class TestRecSys(TestCase):
         t_ratings = pd.DataFrame.from_records(record_list, columns=['from_id', 'to_id', 'score'])
         #print(t_ratings)
 
-        path = '../../contents'
-        # path = 'contents'
+        path = '../../contents/movielens_test1591885241.5520566'
+        try:
+            file = os.path.join(path, "tt0112281.xz")
+            with lzma.open(file, "r") as content_file:
+                pass
+            path = '../../contents'
+        except FileNotFoundError:
+            path = 'contents'
+
         try:
             RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                          items_directory='{}/movielens_test1591885241.5520566'.format(path),
