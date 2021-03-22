@@ -22,7 +22,7 @@ class IndexQuery(RankingAlgorithm):
         positive_threshold (float): ratings bigger than threshold will be considered as positive
     """
     def __init__(self, classic_similarity: bool = True, positive_threshold: float = 0):
-        super().__init__(None, None)
+        super().__init__()
         self.__classic_similarity: bool = classic_similarity
         self.__positive_threshold: float = positive_threshold
 

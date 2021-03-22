@@ -12,7 +12,7 @@ from orange_cb_recsys.utils.feature_selection import FeatureSelection
 
 class PageRankAlg(RankingAlgorithm):
     def __init__(self, graph: FullGraph = None, personalized: bool = True):
-        super().__init__('', '')
+        super().__init__()
         self.__personalized = personalized
         self.__fullgraph: FullGraph = graph
 

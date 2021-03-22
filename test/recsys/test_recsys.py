@@ -1,6 +1,7 @@
 from unittest import TestCase
 import pandas as pd
-from orange_cb_recsys.recsys import RecSys, RecSysConfig, ClassifierRecommender, CentroidVector, CosineSimilarity
+from orange_cb_recsys.recsys import RecSys, RecSysConfig, ClassifierRecommender
+from orange_cb_recsys.recsys.ranking_algorithms.classifier import CentroidVector
 import numpy as np
 
 from orange_cb_recsys.recsys.ranking_algorithms.classifier import GaussianProcess
@@ -38,8 +39,8 @@ class TestRecSys(TestCase):
         t_ratings = pd.DataFrame.from_records(record_list, columns=['from_id', 'to_id', 'score'])
         #print(t_ratings)
 
-        # path = '../../contents'
-        path = 'contents'
+        path = '../../contents'
+        # path = 'contents'
         try:
             RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                          items_directory='{}/movielens_test1591885241.5520566'.format(path),
@@ -64,7 +65,7 @@ class TestRecSys(TestCase):
         except ValueError:
             pass
 
-        t_centroid = CentroidVector(item_field='Plot', field_representation='1', similarity=CosineSimilarity())
+        t_centroid = ClassifierRecommender(item_field={"Plot": "1"}, classifier=CentroidVector())
 
         t_config = RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                                 items_directory='{}/movielens_test1591885241.5520566'.format(path),

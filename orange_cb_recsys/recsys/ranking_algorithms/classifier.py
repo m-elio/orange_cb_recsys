@@ -21,6 +21,7 @@ import pandas as pd
 from orange_cb_recsys.recsys.algorithm import RankingAlgorithm
 from orange_cb_recsys.utils.const import logger
 from orange_cb_recsys.utils.load_content import get_rated_items, get_unrated_items, load_content_instance
+from orange_cb_recsys.recsys.ranking_algorithms.similarities import Similarity, CosineSimilarity, DenseVector
 
 
 class Classifier(ABC):
@@ -465,6 +466,39 @@ class GaussianProcess(Classifier):
         return self.__pipe.predict_proba(X_pred)
 
 
+class CentroidVector(Classifier):
+    """
+    Class that implements Centroid Vector based ranking.
+    It's possible to pass as parameter a similarity implementation
+    otherwise the CosineSimilarity will be computed by default.
+
+    This implementation is slightly different compared to the other
+    classifiers since it doesn't use the sklearn library and there
+    is no instantiation phase. The fit method doesn't fit a classifier,
+    but computes the centroid of the positive rated items by the user. The method
+    predict_proba computes the similarity between the centroid
+    and the unrated items.
+    """
+    def __init__(self, similarity: Similarity = CosineSimilarity()):
+        super().__init__()
+        self.__centroid = None
+        self.__similarity = similarity
+
+    def fit(self, X: list, Y: list = None):
+        X = super().transform(X)
+
+        self.__centroid = [item for item, label in zip(X, Y) if label == 1]
+        self.__centroid = np.array(self.__centroid).mean(axis=0)
+
+    def predict_proba(self, X_pred: list):
+        X_pred = super().transform(X_pred)
+
+        dense_centroid = DenseVector(self.__centroid)
+        similarity = [[self.__similarity.perform(dense_centroid, DenseVector(item))] for item in X_pred]
+
+        return similarity
+
+
 class ClassifierRecommender(RankingAlgorithm):
     """
        Class that implements recommendation through a specified Classifier.
@@ -509,7 +543,7 @@ class ClassifierRecommender(RankingAlgorithm):
        """
 
     def __init__(self, item_field: dict, classifier: Classifier, threshold: int = -1):
-        super().__init__('', '')
+        super().__init__()
         self.item_field = item_field
         self.__classifier = classifier
         self.__threshold = threshold
@@ -688,7 +722,7 @@ class ClassifierRecommender(RankingAlgorithm):
         for score, item in zip(score_labels, unrated_items):
             if item is not None:
                 score_frame = pd.concat(
-                    [score_frame, pd.DataFrame.from_records([(item.content_id, score[1])], columns=columns)],
+                    [score_frame, pd.DataFrame.from_records([(item.content_id, score[-1])], columns=columns)],
                     ignore_index=True)
 
         score_frame = score_frame.sort_values(['rating'], ascending=False).reset_index(drop=True)
