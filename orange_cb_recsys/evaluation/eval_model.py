@@ -117,6 +117,7 @@ class RankingAlgEvalModel(EvalModel):
                 result_dict = {}
                 train = user_ratings.iloc[partition_index[0]]
                 test = user_ratings.iloc[partition_index[1]]
+                test = remove_not_existent_items(test, self.config.items_directory)
 
                 truth = test.loc[:, 'to_id':'score']
                 truth.columns = ["to_id", "rating"]
