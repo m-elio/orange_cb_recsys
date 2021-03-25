@@ -9,9 +9,10 @@ from orange_cb_recsys.evaluation.classification_metrics import Precision, Recall
 from orange_cb_recsys.evaluation.eval_model import RankingAlgEvalModel, ReportEvalModel
 from orange_cb_recsys.evaluation.partitioning import KFoldPartitioning
 from orange_cb_recsys.evaluation.ranking_metrics import NDCG, Correlation
-from orange_cb_recsys.recsys import CosineSimilarity, ClassifierRecommender
+from orange_cb_recsys.recsys import ClassifierRecommender
 from orange_cb_recsys.recsys.config import RecSysConfig
-from orange_cb_recsys.recsys.ranking_algorithms.classifier import SVM, CentroidVector
+from orange_cb_recsys.recsys.ranking_algorithms.classifier import SVM
+from orange_cb_recsys.recsys.ranking_algorithms.centroid_vector import CentroidVectorRecommender
 
 ratings_filename = 'datasets/examples/new_ratings.csv'
 users_dir = 'contents/examples/ex_1/users_1600355755.1935306'
@@ -40,10 +41,9 @@ class TestRankingEvalModel(TestCase):
             users_directory=users_dir,
             items_directory=items_dir,
             score_prediction_algorithm=None,
-            ranking_algorithm=ClassifierRecommender(
+            ranking_algorithm=CentroidVectorRecommender(
                 {"Plot": "0"},
-                CentroidVector(),
-                0,
+                threshold=0
             ),
             rating_frame=t_ratings
         )

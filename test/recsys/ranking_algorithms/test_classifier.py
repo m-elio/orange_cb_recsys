@@ -5,7 +5,7 @@ import pandas as pd
 import os
 
 from orange_cb_recsys.recsys.ranking_algorithms.classifier import ClassifierRecommender, KNN, RandomForest, \
-    GaussianProcess, LogReg, DecisionTree, SVM, CentroidVector
+    GaussianProcess, LogReg, DecisionTree, SVM
 
 
 class TestClassifierRecommender(TestCase):
@@ -47,10 +47,6 @@ class TestClassifierRecommender(TestCase):
         self.assertGreaterEqual(result.rating[0], 0)
 
         alg = ClassifierRecommender({"Plot": "0"}, DecisionTree(), 0)
-        result = alg.predict('A000', ratings, 1, path, ['tt0114576'])
-        self.assertGreaterEqual(result.rating[0], 0)
-
-        alg = ClassifierRecommender({"Plot": "0"}, CentroidVector(), 0)
         result = alg.predict('A000', ratings, 1, path, ['tt0114576'])
         self.assertGreaterEqual(result.rating[0], 0)
 

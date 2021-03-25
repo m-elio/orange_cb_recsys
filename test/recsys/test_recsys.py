@@ -1,7 +1,7 @@
 from unittest import TestCase
 import pandas as pd
 from orange_cb_recsys.recsys import RecSys, RecSysConfig, ClassifierRecommender
-from orange_cb_recsys.recsys.ranking_algorithms.classifier import CentroidVector
+from orange_cb_recsys.recsys.ranking_algorithms.centroid_vector import CentroidVectorRecommender
 import numpy as np
 import os
 import lzma
@@ -74,7 +74,7 @@ class TestRecSys(TestCase):
         except ValueError:
             pass
 
-        t_centroid = ClassifierRecommender(item_field={"Plot": "1"}, classifier=CentroidVector())
+        t_centroid = CentroidVectorRecommender(item_field={"Plot": "1"}, threshold=0)
 
         t_config = RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                                 items_directory='{}/movielens_test1591885241.5520566'.format(path),
