@@ -122,8 +122,7 @@ class RankingAlgEvalModel(EvalModel):
                 truth = test.loc[:, 'to_id':'score']
                 truth.columns = ["to_id", "rating"]
                 recs_number = len(truth['rating'].values)
-                predictions = recsys.fit_eval_ranking(
-                    user_id, train, truth['to_id'].tolist(), recs_number)
+                predictions = recsys.fit_eval_ranking(train, truth['to_id'].tolist(), recs_number)
                 for metric in self.metrics:
                     result_dict['from'] = user_id
                     result_dict[str(metric)] = metric.perform(predictions, truth)

@@ -1,9 +1,11 @@
 import collections
+from abc import ABC
 from typing import List
 
 from sklearn import neighbors
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction import DictVectorizer
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
@@ -12,14 +14,15 @@ from sklearn.tree import DecisionTreeClassifier
 
 import pandas as pd
 
-from orange_cb_recsys.recsys.algorithm import ItemFieldRankingAlgorithm, Transformer
+from orange_cb_recsys.recsys.ranking_algorithms.item_fields_algorithm import\
+    ItemFieldsRankingAlgorithm, transform
 from orange_cb_recsys.utils.const import logger
 
 
-class Classifier(Transformer):
+class Classifier(ABC):
     """
-    Abstract class for Classifiers which extends Transformer.
-    It also keeps all the attributes that the classifiers need: their parameters, the instantiated classifier
+    Abstract class for Classifiers.
+    It keeps all the attributes that the classifiers need: their parameters, the instantiated classifier
     and the pipeline.
 
     It has an abstract fit() method and an abstract predict_proba() method.
@@ -33,6 +36,7 @@ class Classifier(Transformer):
             self.__empty_parameters = True
         self.__clf = None
         self.__pipe = None
+        self.__transformer = DictVectorizer(sparse=True, sort=False)
 
     @property
     def classifier_parameters(self):
@@ -65,6 +69,10 @@ class Classifier(Transformer):
     @pipe.setter
     def pipe(self, pipe):
         self.__pipe = pipe
+
+    @property
+    def transformer(self):
+        return self.__transformer
 
     def fit(self, X: list, Y: list = None):
         """
@@ -137,14 +145,14 @@ class KNN(Classifier):
         self.__instantiate_classifier(X)
 
         # Transform the input if there are dicts, multiple representation, etc.
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         pipe = make_pipeline(self.clf)
         self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
 
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
         return self.pipe.predict_proba(X_pred)
 
@@ -175,13 +183,13 @@ class RandomForest(Classifier):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         pipe = make_pipeline(self.clf)
         self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
         return self.pipe.predict_proba(X_pred)
 
@@ -267,7 +275,7 @@ class SVM(Classifier):
     def fit(self, X: list, Y: list = None):
 
         # Transform the input
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         # Try fitting the Calibrated classifier for better classification
         try:
@@ -284,7 +292,7 @@ class SVM(Classifier):
             self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
         return self.pipe.predict_proba(X_pred)
 
@@ -315,13 +323,13 @@ class LogReg(Classifier):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         pipe = make_pipeline(self.clf)
         self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
         return self.pipe.predict_proba(X_pred)
 
@@ -352,13 +360,13 @@ class DecisionTree(Classifier):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         pipe = make_pipeline(self.clf)
         self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
         return self.pipe.predict_proba(X_pred)
 
@@ -389,18 +397,18 @@ class GaussianProcess(Classifier):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         pipe = make_pipeline(self.clf)
         self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
         return self.pipe.predict_proba(X_pred)
 
 
-class ClassifierRecommender(ItemFieldRankingAlgorithm):
+class ClassifierRecommender(ItemFieldsRankingAlgorithm):
     """
        Class that implements recommendation through a specified Classifier.
        In the constructor must be specified parameter needed for the recommendations.
@@ -429,7 +437,7 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
              alg.predict('U1', rating, 1, path)
 
        Args:
-           item_field (dict): dict where the key is the name of the field
+           item_fields (dict): dict where the key is the name of the field
                 that contains the content to use, value is the representation(s) that will be
                 used for the said item. The value of a field can be a string or a list,
                 use a list if you want to use multiple representations for a particular field.
@@ -443,8 +451,8 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
                considered as positive
        """
 
-    def __init__(self, item_field: dict, classifier: Classifier, threshold: int = -1):
-        super().__init__(item_field, threshold)
+    def __init__(self, item_fields: dict, classifier: Classifier, threshold: int = -1):
+        super().__init__(item_fields, threshold)
         self.__classifier = classifier
 
     def __calc_labels_rated_baglist(self, rated_items: list, ratings: pd.DataFrame):
@@ -471,10 +479,10 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
         rated_features_bag_list = []
 
         for item in rated_items:
-            single_item_bag_list = []
             if item is not None:
-                for item_field in self.item_field:
-                    field_representations = self.item_field[item_field]
+                single_item_bag_list = []
+                for item_field in self.item_fields:
+                    field_representations = self.item_fields[item_field]
                     if isinstance(field_representations, str):
                         # We have only one representation
                         representation = field_representations
@@ -486,10 +494,10 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
                             single_item_bag_list.append(
                                 item.get_field(item_field).get_representation(representation).value
                             )
-            labels.append(
-                    1 if float(ratings[ratings['to_id'] == item.content_id].score) >= self.threshold else 0
-            )
-            rated_features_bag_list.append(single_item_bag_list)
+                labels.append(
+                        1 if float(ratings[ratings['to_id'] == item.content_id].score) >= self.threshold else 0
+                )
+                rated_features_bag_list.append(single_item_bag_list)
 
         if len(labels) == 0:
             raise FileNotFoundError("No rated item available locally!\n"
@@ -503,12 +511,12 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
 
         return labels, rated_features_bag_list
 
-    def predict(self, user_id: str, ratings: pd.DataFrame, recs_number: int, items_directory: str,
+    def predict(self, ratings: pd.DataFrame, recs_number: int, items_directory: str,
                 candidate_item_id_list: List = None) -> pd.DataFrame:
         """
         Get recommendations for a specified user.
 
-        You must pass the user_id, the DataFrame which contains the ratings of the user, how many
+        You must pass the the DataFrame which contains the ratings of the user, how many
         recommended item the method predict() must return, and the path of the items.
         If recommendation for certain item is needed, specify them in candidate_item_id_list
         parameter. In this case, the recommender system will return only scores for the items
@@ -524,7 +532,6 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
              alg.predict('A000', ratings, 1, path, ['tt0114576'])
 
         Args:
-            user_id (str): user for which recommendations will be computed
             ratings (pd.DataFrame): ratings of the user with id equal to user_id
             recs_number (int): How long the ranking will be
             items_directory (str): Path to the directory where the items are stored.
@@ -561,10 +568,9 @@ class ClassifierRecommender(ItemFieldRankingAlgorithm):
         score_labels = self.__classifier.predict_proba(unrated_features_bag_list)
 
         for score, item in zip(score_labels, unrated_items):
-            if item is not None:
-                score_frame = pd.concat(
-                    [score_frame, pd.DataFrame.from_records([(item.content_id, score[1])], columns=columns)],
-                    ignore_index=True)
+            score_frame = pd.concat(
+                [score_frame, pd.DataFrame.from_records([(item.content_id, score[1])], columns=columns)],
+                ignore_index=True)
 
         score_frame = score_frame.sort_values(['rating'], ascending=False).reset_index(drop=True)
         score_frame = score_frame[:recs_number]

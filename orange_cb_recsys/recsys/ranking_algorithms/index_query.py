@@ -120,7 +120,7 @@ class IndexQuery(RankingAlgorithm):
 
         return score_frame
 
-    def predict(self, user_id: str, ratings: pd.DataFrame, recs_number: int, items_directory: str,
+    def predict(self, ratings: pd.DataFrame, recs_number: int, items_directory: str,
                 candidate_item_id_list: list = None):
         """
         Finds the documents that the user liked by comparing the score given by the user to the item
@@ -128,8 +128,7 @@ class IndexQuery(RankingAlgorithm):
         the document it refers to is considered liked by the user)
         After that, calls __recs_query to execute the prediction
         Args:
-            user_id (str): user for which recommendations will be computed
-            ratings (pd.DataFrame): ratings of the user with id equal to user_id
+            ratings (pd.DataFrame): ratings of a specific user
             recs_number (int): how long the ranking will be
             items_directory (str): name of the directory where the items are stored
             candidate_item_id_list (list): list of the items that can be recommended, if None

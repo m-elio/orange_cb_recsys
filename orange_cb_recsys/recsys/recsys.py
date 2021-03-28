@@ -92,7 +92,7 @@ class RecSys:
 
         # calculate predictions
         logger.info("Computing ranking")
-        score_frame = self.__config.ranking_algorithm.predict(user_id, user_ratings, recs_number,
+        score_frame = self.__config.ranking_algorithm.predict(user_ratings, recs_number,
                                                               self.__config.items_directory,
                                                               candidate_item_id_list)
 
@@ -126,19 +126,18 @@ class RecSys:
 
         return score_frame
 
-    def fit_eval_ranking(self, user_id, user_ratings: pd.DataFrame, test_set_items, recs_number):
+    def fit_eval_ranking(self, user_ratings: pd.DataFrame, test_set_items, recs_number):
         """
         Computes a ranking of specified length,
         using as training set the ratings provided by the user
 
         Args:
-            user_id:
             user_ratings (pd.DataFrame): Training set
             test_set_items (pd.DataFrame)
             recs_number (int): Number of recommendations to provide
         """
         user_ratings = user_ratings.sort_values(['to_id'], ascending=True)
-        score_frame = self.__config.ranking_algorithm.predict(user_id, user_ratings, recs_number,
+        score_frame = self.__config.ranking_algorithm.predict(user_ratings, recs_number,
                                                               self.__config.items_directory,
                                                               test_set_items)
         return score_frame
