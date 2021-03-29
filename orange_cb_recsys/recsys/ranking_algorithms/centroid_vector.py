@@ -32,6 +32,7 @@ class CentroidVectorRecommender(ItemFieldsRankingAlgorithm):
     def __init__(self, item_fields: dict, similarity: Similarity = CosineSimilarity(), threshold: int = -1):
         super().__init__(item_fields, threshold)
         self.__similarity = similarity
+        self.__transformer = DictVectorizer(sparse=True, sort=False)
 
     def __calc_positive_rated_baglist(self, rated_items: list, ratings: pd.DataFrame):
         """
@@ -136,7 +137,6 @@ class CentroidVectorRecommender(ItemFieldsRankingAlgorithm):
              scores (pd.DataFrame): DataFrame whose columns are the ids of the items (to_id),
                 and the similarities between the items and the centroid (rating)
         """
-        transformer = DictVectorizer(sparse=True, sort=False)
         # Loads the items and extracts features from the unrated items, then
         # extracts features from the positive rated items
         # If exception, returns an empty score_frame
@@ -151,14 +151,14 @@ class CentroidVectorRecommender(ItemFieldsRankingAlgorithm):
             return score_frame
 
         logger.info("Computing rated items centroid")
-        positive_rated_items_array = transform(transformer, positive_rated_features_bag_list)
+        positive_rated_items_array = transform(self.__transformer, positive_rated_features_bag_list)
         centroid = np.array(positive_rated_items_array).mean(axis=0)
 
         columns = ["to_id", "rating"]
         score_frame = pd.DataFrame(columns=columns)
 
         logger.info("Computing similarity between centroid and unrated items")
-        unrated_items_array = transform(transformer, unrated_features_bag_list)
+        unrated_items_array = transform(self.__transformer, unrated_features_bag_list)
         similarities = [self.__similarity.perform(centroid, item) for item in unrated_items_array]
 
         for item, similarity in zip(unrated_items, similarities):
