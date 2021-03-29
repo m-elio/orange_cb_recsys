@@ -104,7 +104,7 @@ class GiniIndex(FairnessMetric):
             """Calculate the Gini coefficient of a numpy array."""
 
             array = array.flatten()  # all values are treated equally, arrays must be 1d
-            array += 1  # values shift, can't be negative
+            array = abs(array)  # values shift, can't be negative
             array += 0.0000001  # values cannot be 0
             array = np.sort(array)  # values must be sorted
             index = np.arange(1, array.shape[0] + 1)  # index per array element
