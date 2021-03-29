@@ -16,9 +16,8 @@ class TestContent(TestCase):
         content.append("test_field", content_field)
         try:
             content.serialize(".")
-        except:
-            pass
-
+        except FileNotFoundError:
+            self.fail("Could not create file!")
         with lzma.open('001.xz', 'r') as file:
             self.assertEqual(content, pickle.load(file))
 
@@ -38,4 +37,4 @@ class TestContent(TestCase):
         content_field2.append(str(0), content_field_repr)
         content2.append("test_field2", content_field2)
         content2.remove("test_field2")
-        self.assertTrue(content1.field_dict, content2.field_dict)
+        self.assertEqual(content1.field_dict, content2.field_dict)
