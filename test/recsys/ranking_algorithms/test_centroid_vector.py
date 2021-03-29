@@ -1,95 +1,63 @@
-import lzma
 import os
-import pickle
 from unittest import TestCase
 
-from orange_cb_recsys.recsys import CosineSimilarity, CentroidVector, RecSysConfig, RecSys
+from orange_cb_recsys.recsys.ranking_algorithms.centroid_vector import CentroidVectorRecommender
 
 import pandas as pd
 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+path = os.path.join(THIS_DIR, "../../../contents/movies_multiple_repr")
+
+ratings = pd.DataFrame.from_records([
+    ("A000", "tt0112281", 0.99, "54654675"),
+    ("A000", "tt0112453", 0, "54654675"),
+    ("A000", "tt0112641", 0.44, "54654675"),
+    ("A000", "tt0112760", -0.68, "54654675"),
+    ("A000", "tt0112896", -0.32, "54654675"),
+    ("A000", "tt0113041", 0.1, "54654675"),
+    ("A000", "tt0113101", -0.87, "54654675")
+], columns=["from_id", "to_id", "score", "timestamp"])
+
 
 class TestCentroidVector(TestCase):
+
     def test_predict(self):
-        sim = CosineSimilarity()
-        alg = CentroidVector('Plot', '1', sim)
-        ratings = pd.DataFrame.from_records([
-            ("A000", "tt0112281", "sdfgd", 0.99, "54654675"),
-            ("A000", "tt0112453", "sdfgd", 0, "54654675"),
-            ("A000", "tt0112641", "sdfgd", 0.44, "54654675"),
-            ("A000", "tt0112760", "sdfgd", -0.68, "54654675"),
-            ("A000", "tt0112896", "sdfgd", -0.32, "54654675"),
-            ("A000", "tt0113041", "sdfgd", 0.1, "54654675"),
-            ("A000", "tt0113101", "sdfgd", -0.87, "54654675")
-        ], columns=["from_id", "to_id", "original_rating", "score", "timestamp"])
+        alg = CentroidVectorRecommender({'Plot': ['0']}, threshold=0)
+        result = alg.predict(ratings=ratings, recs_number=2, items_directory=path)
+        self.assertGreater(result.rating[0], 0)
 
-        path = "../../../contents/movielens_test1591885241.5520566"
-        items = []
-        try:
-            file1 = os.path.join(path, "tt0114576.xz")
-            with lzma.open(file1, "rb") as content_file:
-                items.append(pickle.load(content_file))
+        alg = CentroidVectorRecommender({'Plot': ['1']}, threshold=0)
+        result = alg.predict(ratings=ratings, recs_number=2, items_directory=path)
+        self.assertGreater(result.rating[0], 0)
 
-            file2 = os.path.join(path, "tt0114709.xz")
-            with lzma.open(file2, "rb") as content_file:
-                items.append(pickle.load(content_file))
-        except FileNotFoundError:
-            path = "contents/movielens_test1591885241.5520566"
-            file1 = os.path.join(path, "tt0114576.xz")
-            with lzma.open(file1, "rb") as content_file:
-                items.append(pickle.load(content_file))
+        alg = CentroidVectorRecommender({'Plot': ['0', '1'], 'Genre': ['0', '1'], 'Director': ['1']}, threshold=0)
+        result = alg.predict(ratings=ratings, recs_number=1, items_directory=path,
+                             candidate_item_id_list=['tt0114319'])
+        self.assertGreater(result.rating[0], 0)
 
-            file2 = os.path.join(path, "tt0114709.xz")
-            with lzma.open(file2, "rb") as content_file:
-                items.append(pickle.load(content_file))
-
-        self.assertGreater(alg.predict('A000', ratings=ratings, recs_number=2, items_directory=path).rating[0], 0.9)
+        alg = CentroidVectorRecommender({'Plot': ['0', '1'], 'Genre': ['0', '1'], 'Director': ['1']}, threshold=0)
+        result = alg.predict(ratings=ratings, recs_number=2, items_directory=path)
+        self.assertGreater(result.rating[0], 0)
 
     def test_exceptions(self):
-        ratings = pd.DataFrame.from_records([
-            ("A000", "tt0112281", "sdfgd", 0.99, "54654675"),
-            ("A000", "tt0112453", "sdfgd", 0, "54654675"),
-            ("A000", "tt0112641", "sdfgd", 0.44, "54654675"),
-            ("A000", "tt0112760", "sdfgd", -0.68, "54654675"),
-            ("A000", "tt0112896", "sdfgd", -0.32, "54654675"),
-            ("A000", "tt0113041", "sdfgd", 0.1, "54654675"),
-            ("A000", "tt0113101", "sdfgd", -0.87, "54654675")
-        ], columns=["from_id", "to_id", "original_rating", "score", "timestamp"])
+        # test for empty ratings
+        empty_ratings = pd.DataFrame.from_records([], columns=["from_id", "to_id", "score", "timestamp"])
+        t_centroid = CentroidVectorRecommender({'Plot': '1'})
+        result = t_centroid.predict(empty_ratings, 2, path)
+        self.assertEqual(len(result), 0)
 
-        path = "../../../contents/movielens_test1591885241.5520566"
-        items = []
-        try:
-            file1 = os.path.join(path, "tt0114576.xz")
-            with lzma.open(file1, "rb") as content_file:
-                items.append(pickle.load(content_file))
+        # test for negative ratings
+        negative_ratings = pd.DataFrame.from_records([
+            ("A000", "tt0112281", -0.99, "54654675"),
+            ("A000", "tt0112453", -0.22, "54654675"),
+            ("A000", "tt0112641", -0.44, "54654675")
+        ], columns=["from_id", "to_id", "score", "timestamp"])
+        t_centroid = CentroidVectorRecommender({'Plot': '1'}, threshold=0)
+        result = t_centroid.predict(negative_ratings, 2, path)
+        self.assertEqual(len(result), 0)
 
-            file2 = os.path.join(path, "tt0114709.xz")
-            with lzma.open(file2, "rb") as content_file:
-                items.append(pickle.load(content_file))
-        except FileNotFoundError:
-            path = "contents/movielens_test1591885241.5520566"
-            file1 = os.path.join(path, "tt0114576.xz")
-            with lzma.open(file1, "rb") as content_file:
-                items.append(pickle.load(content_file))
-
-            file2 = os.path.join(path, "tt0114709.xz")
-            with lzma.open(file2, "rb") as content_file:
-                items.append(pickle.load(content_file))
-
-        try:
-            t_centroid = CentroidVector(item_field='Title', field_representation='1', similarity=CosineSimilarity())
-            t_centroid.predict('A000', ratings=ratings, recs_number=2, items_directory=path)
-        except ValueError:
-            pass
-
-        try:
-            t_centroid = CentroidVector(item_field='PLot', field_representation='4', similarity=CosineSimilarity())
-            t_centroid.predict('A000', ratings=ratings, recs_number=2, items_directory=path)
-        except ValueError:
-            pass
-
-        try:
-            t_centroid = CentroidVector(item_field='PLot', field_representation='2', similarity=CosineSimilarity())
-            t_centroid.predict('A000', ratings=ratings, recs_number=2, items_directory=path)
-        except ValueError:
-            pass
-
+        # test for embedding technique with granularity word
+        path_word_gran = os.path.join(THIS_DIR, "../../../contents/movies_plot_1_word_granularity")
+        t_centroid = CentroidVectorRecommender({'Plot': '1'})
+        result = t_centroid.predict(ratings, 2, path_word_gran)
+        self.assertEqual(len(result), 0)

@@ -1,7 +1,10 @@
 from unittest import TestCase
 import pandas as pd
-from orange_cb_recsys.recsys import RecSys, RecSysConfig, ClassifierRecommender, CentroidVector, CosineSimilarity
+from orange_cb_recsys.recsys import RecSys, RecSysConfig, ClassifierRecommender
+from orange_cb_recsys.recsys.ranking_algorithms.centroid_vector import CentroidVectorRecommender
 import numpy as np
+import os
+import lzma
 
 from orange_cb_recsys.recsys.ranking_algorithms.classifier import GaussianProcess
 
@@ -38,15 +41,22 @@ class TestRecSys(TestCase):
         t_ratings = pd.DataFrame.from_records(record_list, columns=['from_id', 'to_id', 'score'])
         #print(t_ratings)
 
-        # path = '../../contents'
-        path = 'contents'
+        path = '../../contents/movielens_test1591885241.5520566'
+        try:
+            file = os.path.join(path, "tt0112281.xz")
+            with lzma.open(file, "r") as content_file:
+                pass
+            path = '../../contents'
+        except FileNotFoundError:
+            path = 'contents'
+
         try:
             RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                          items_directory='{}/movielens_test1591885241.5520566'.format(path),
                          rating_frame=t_ratings)
         except ValueError:
             pass
-        t_classifier = ClassifierRecommender(item_field={'Plot': '2'}, classifier=GaussianProcess())
+        t_classifier = ClassifierRecommender(item_fields={'Plot': '2'}, classifier=GaussianProcess())
         t_config = RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                                 items_directory='{}/movielens_test1591885241.5520566'.format(path),
                                 rating_frame=t_ratings,
@@ -57,14 +67,14 @@ class TestRecSys(TestCase):
 
         user_frame = t_ratings[t_ratings['from_id'] == '1']
         test_set = pd.DataFrame({'to_id': ['tt0112281', 'tt0112302']})
-        t_recsys.fit_eval_ranking(user_id='1', user_ratings=user_frame, test_set_items=test_set.to_id.tolist(),
+        t_recsys.fit_eval_ranking(user_ratings=user_frame, test_set_items=test_set.to_id.tolist(),
                                   recs_number=len(test_set.to_id.tolist()))
         try:
             t_recsys.fit_ranking('1', 2)
         except ValueError:
             pass
 
-        t_centroid = CentroidVector(item_field='Plot', field_representation='1', similarity=CosineSimilarity())
+        t_centroid = CentroidVectorRecommender(item_fields={"Plot": "1"}, threshold=0)
 
         t_config = RecSysConfig(users_directory='{}/users_test1591814865.8959296'.format(path),
                                 items_directory='{}/movielens_test1591885241.5520566'.format(path),
@@ -73,7 +83,7 @@ class TestRecSys(TestCase):
         t_recsys = RecSys(config=t_config)
         t_recsys.fit_ranking('1', 2)
 
-        t_recsys.fit_eval_ranking(user_id='1', user_ratings=user_frame, test_set_items=test_set.to_id.tolist(), recs_number=len(test_set.to_id.tolist()))
+        t_recsys.fit_eval_ranking(user_ratings=user_frame, test_set_items=test_set.to_id.tolist(), recs_number=len(test_set.to_id.tolist()))
 
         try:
             t_recsys.fit_predict('1', [])

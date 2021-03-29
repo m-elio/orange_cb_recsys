@@ -4,7 +4,6 @@ from unittest import TestCase
 from orange_cb_recsys.recsys import NXPageRank
 from orange_cb_recsys.recsys.graphs.full_graphs import NXFullGraph
 from orange_cb_recsys.utils.const import logger
-from orange_cb_recsys.utils.feature_selection import NXFSPageRank
 
 ratings = pd.DataFrame.from_records([
             ("A000", "tt0114576", 0.5, "54654675"),
@@ -23,7 +22,8 @@ graph = NXFullGraph(ratings)
 class TestNXPageRank(TestCase):
     def test_predict(self):
         alg = NXPageRank(graph=graph)
-        rank = alg.predict('A001', ratings, 1)
+        user_ratings = ratings[ratings['from_id'] == 'A001']
+        rank = alg.predict(user_ratings, 1)
         logger.info('pg_rk results')
         for r in rank.keys():
             print(str(r) + " " + str(rank[r]))
@@ -37,7 +37,7 @@ class TestNXPageRank(TestCase):
         #     print(str(r) + " " + str(rank_fs[r]))
 
         alg = NXPageRank(graph=graph, personalized=True)
-        rank_personalized = alg.predict('A001', ratings, 1)
+        rank_personalized = alg.predict(user_ratings, 1)
         logger.info('pg_rk results')
         for r in rank_personalized.keys():
             print(str(r) + " " + str(rank_personalized[r]))

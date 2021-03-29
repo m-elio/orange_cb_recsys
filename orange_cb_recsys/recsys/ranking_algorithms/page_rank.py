@@ -12,7 +12,7 @@ from orange_cb_recsys.utils.feature_selection import FeatureSelection
 
 class PageRankAlg(RankingAlgorithm):
     def __init__(self, graph: FullGraph = None, personalized: bool = True):
-        super().__init__('', '')
+        super().__init__()
         self.__personalized = personalized
         self.__fullgraph: FullGraph = graph
 
@@ -31,7 +31,7 @@ class PageRankAlg(RankingAlgorithm):
         self.__personalized = personalized
 
     @abstractmethod
-    def predict(self, user_id: str, ratings: pd.DataFrame, recs_number: int, items_directory: str,
+    def predict(self, ratings: pd.DataFrame, recs_number: int, items_directory: str,
                 candidate_item_id_list: List = None):
         raise NotImplemented
 
@@ -67,11 +67,13 @@ class NXPageRank(PageRankAlg):
     def __init__(self, graph: NXFullGraph = None, personalized: bool = False):
         super().__init__(graph=graph, personalized=personalized)
 
-    def predict(self, user_id: str,
+    def predict(self,
                 ratings: pd.DataFrame,  # not used
                 recs_number: int,
                 candidate_item_id_list: List = None,  # not used
                 feature_selection_algorithm: FeatureSelection = None):
+
+        user_id = ratings['from_id'].iloc[0]
         if self.fullgraph is None:
             return {}
         if feature_selection_algorithm is not None:

@@ -2,102 +2,77 @@ import collections
 from abc import ABC
 from typing import List
 
-import numpy as np
-from scipy.sparse import hstack
 from sklearn import neighbors
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.exceptions import NotFittedError
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.utils.validation import check_is_fitted
 
 import pandas as pd
 
-from orange_cb_recsys.recsys.algorithm import RankingAlgorithm
+from orange_cb_recsys.recsys.ranking_algorithms.item_fields_algorithm import\
+    ItemFieldsRankingAlgorithm, transform
 from orange_cb_recsys.utils.const import logger
-from orange_cb_recsys.utils.load_content import get_rated_items, get_unrated_items, load_content_instance
 
 
 class Classifier(ABC):
     """
-    Abstract class for Classifiers
+    Abstract class for Classifiers.
+    It keeps all the attributes that the classifiers need: their parameters, the instantiated classifier
+    and the pipeline.
 
-    The only concrete method is transform(). It has an abstract fit() method and an abstract
-    predict_proba() method.
+    It has an abstract fit() method and an abstract predict_proba() method.
     """
 
     def __init__(self, **classifier_parameters):
+        super().__init__()
+        self.__classifier_parameters = classifier_parameters
+        self.__empty_parameters = False
+        if len(classifier_parameters) == 0:
+            self.__empty_parameters = True
+        self.__clf = None
+        self.__pipe = None
         self.__transformer = DictVectorizer(sparse=True, sort=False)
 
-    def transform(self, X: list):
-        """
-        Transform the X passed vectorizing if X contains dicts and merging
-        multiple representations in a single one for every item in X.
-        So if X = [
-                    [dict, arr, arr]
-                        ...
-                    [dict, arr, arr]
-                ]
-        where every sublist contains multiple representation for a single item,
-        the function returns:
-        X = [
-                arr,
-                ...
-                arr
-            ]
-        Where every row is the fused representation for the item
+    @property
+    def classifier_parameters(self):
+        return self.__classifier_parameters
 
-        Args:
-            X (list): list that contains representations of the items
+    @classifier_parameters.setter
+    def classifier_parameters(self, **classifier_parameters):
+        self.__classifier_parameters = classifier_parameters
 
-        Returns:
-            X fused and vectorized
+    @property
+    def empty_parameters(self):
+        return self.__empty_parameters
 
-        """
+    @empty_parameters.setter
+    def empty_parameters(self, empty_parameters):
+        self.__empty_parameters = empty_parameters
 
-        # We check if there are dicts as representation in the first element of X,
-        # since the representations are the same for all elements in X we can check
-        # for dicts only in one element
-        need_vectorizer = any(isinstance(rep, dict) for rep in X[0])
+    @property
+    def clf(self):
+        return self.__clf
 
-        if need_vectorizer:
-            # IF the transformer is not fitted then we are training the model
-            try:
-                check_is_fitted(self.__transformer)
-            except NotFittedError:
-                X_dicts = []
-                for item in X:
-                    for rep in item:
-                        if isinstance(rep, dict):
-                            X_dicts.append(rep)
+    @clf.setter
+    def clf(self, clf):
+        self.__clf = clf
 
-                self.__transformer.fit(X_dicts)
+    @property
+    def pipe(self):
+        return self.__pipe
 
-            # In every case, we transform the input
-            X_vectorized = []
-            for sublist in X:
-                single_list = []
-                for item in sublist:
-                    if isinstance(item, dict):
-                        vector = self.__transformer.transform(item)
-                        single_list.append(vector)
-                    else:
-                        single_list.append(item)
-                X_vectorized.append(single_list)
-        else:
-            X_vectorized = X
+    @pipe.setter
+    def pipe(self, pipe):
+        self.__pipe = pipe
 
-        try:
-            X_sparse = [hstack(sublist).toarray().flatten() for sublist in X_vectorized]
-        except ValueError:
-            X_sparse = [np.column_stack(sublist).flatten() for sublist in X_vectorized]
-
-        return X_sparse
+    @property
+    def transformer(self):
+        return self.__transformer
 
     def fit(self, X: list, Y: list = None):
         """
@@ -141,13 +116,7 @@ class KNN(Classifier):
     the Classifier directly from sklearn
     """
     def __init__(self, **classifier_parameters):
-        super().__init__()
-        self.__classifier_parameters = classifier_parameters
-        self.__empty_parameters = False
-        if len(classifier_parameters) == 0:
-            self.__empty_parameters = True
-        self.__clf = None
-        self.__pipe = None
+        super().__init__(**classifier_parameters)
 
     def __instantiate_classifier(self, X: list):
         """
@@ -163,29 +132,29 @@ class KNN(Classifier):
         Args:
             X (list): Training data
         """
-        if self.__empty_parameters:
+        if self.empty_parameters:
             if len(X) < 5:
-                self.__clf = neighbors.KNeighborsClassifier(n_neighbors=len(X))
+                self.clf = neighbors.KNeighborsClassifier(n_neighbors=len(X))
             else:
-                self.__clf = neighbors.KNeighborsClassifier()
+                self.clf = neighbors.KNeighborsClassifier()
         else:
-            self.__clf = neighbors.KNeighborsClassifier(**self.__classifier_parameters)
+            self.clf = neighbors.KNeighborsClassifier(**self.classifier_parameters)
 
     def fit(self, X: list, Y: list = None):
 
         self.__instantiate_classifier(X)
 
         # Transform the input if there are dicts, multiple representation, etc.
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
-        pipe = make_pipeline(self.__clf)
-        self.__pipe = pipe.fit(X, Y)
+        pipe = make_pipeline(self.clf)
+        self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
 
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
-        return self.__pipe.predict_proba(X_pred)
+        return self.pipe.predict_proba(X_pred)
 
 
 class RandomForest(Classifier):
@@ -194,14 +163,9 @@ class RandomForest(Classifier):
     The parameters one could pass are the same ones you would pass instantiating
     the classifier directly from sklearn
     """
+
     def __init__(self, **classifier_parameters):
-        super().__init__()
-        self.__classifier_parameters = classifier_parameters
-        self.__empty_parameters = False
-        if len(classifier_parameters) == 0:
-            self.__empty_parameters = True
-        self.__clf = None
-        self.__pipe = None
+        super().__init__(**classifier_parameters)
 
     def __instantiate_classifier(self):
         """
@@ -210,24 +174,24 @@ class RandomForest(Classifier):
         If parameters were passed in the constructor of this class, then
         we pass them to sklearn.
         """
-        if self.__empty_parameters:
-            self.__clf = RandomForestClassifier(n_estimators=400, random_state=42)
+        if self.empty_parameters:
+            self.clf = RandomForestClassifier(n_estimators=400, random_state=42)
         else:
-            self.__clf = RandomForestClassifier(**self.__classifier_parameters)
+            self.clf = RandomForestClassifier(**self.classifier_parameters)
 
     def fit(self, X: list, Y: list = None):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
-        pipe = make_pipeline(self.__clf)
-        self.__pipe = pipe.fit(X, Y)
+        pipe = make_pipeline(self.clf)
+        self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
-        return self.__pipe.predict_proba(X_pred)
+        return self.pipe.predict_proba(X_pred)
 
 
 class SVM(Classifier):
@@ -240,15 +204,9 @@ class SVM(Classifier):
     method calc_folds(), then a Calibrated SVC classifier is instantiated.
     Otherwise a simple SVC classifier is instantiated.
     """
+
     def __init__(self, **classifier_parameters):
-        super().__init__()
-        self.__classifier_parameters = classifier_parameters
-        self.__empty_parameters = False
-        if len(classifier_parameters) == 0:
-            self.__empty_parameters = True
-        self.__clf = None
-        self.__pipe = None
-        self.__folds = None
+        super().__init__(**classifier_parameters)
 
     def calc_folds(self, labels: list):
         """
@@ -299,44 +257,44 @@ class SVM(Classifier):
         """
 
         if calibrated:
-            if self.__empty_parameters:
-                self.__clf = CalibratedClassifierCV(
+            if self.empty_parameters:
+                self.clf = CalibratedClassifierCV(
                     SVC(kernel='linear', probability=True),
                     cv=self.__folds)
 
             else:
-                self.__clf = CalibratedClassifierCV(
-                    SVC(kernel='linear', probability=True, **self.__classifier_parameters),
+                self.clf = CalibratedClassifierCV(
+                    SVC(kernel='linear', probability=True, **self.classifier_parameters),
                     cv=self.__folds)
         else:
-            if self.__empty_parameters:
-                self.__clf = SVC(kernel='linear', probability=True)
+            if self.empty_parameters:
+                self.clf = SVC(kernel='linear', probability=True)
             else:
-                self.__clf = SVC(kernel='linear', probability=True, **self.__classifier_parameters)
+                self.clf = SVC(kernel='linear', probability=True, **self.classifier_parameters)
 
     def fit(self, X: list, Y: list = None):
 
         # Transform the input
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
         # Try fitting the Calibrated classifier for better classification
         try:
             self.__instantiate_classifier(calibrated=True)
 
-            pipe = make_pipeline(self.__clf)
-            self.__pipe = pipe.fit(X, Y)
+            pipe = make_pipeline(self.clf)
+            self.pipe = pipe.fit(X, Y)
 
         # If exception instantiate a non-calibrated classifier, then fit
         except ValueError:
             self.__instantiate_classifier(calibrated=False)
 
-            pipe = make_pipeline(self.__clf)
-            self.__pipe = pipe.fit(X, Y)
+            pipe = make_pipeline(self.clf)
+            self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
-        return self.__pipe.predict_proba(X_pred)
+        return self.pipe.predict_proba(X_pred)
 
 
 class LogReg(Classifier):
@@ -345,14 +303,9 @@ class LogReg(Classifier):
     The parameters one could pass are the same ones you would pass instantiating
     the classifier directly from sklearn
     """
+
     def __init__(self, **classifier_parameters):
-        super().__init__()
-        self.__classifier_parameters = classifier_parameters
-        self.__empty_parameters = False
-        if len(classifier_parameters) == 0:
-            self.__empty_parameters = True
-        self.__clf = None
-        self.__pipe = None
+        super().__init__(**classifier_parameters)
 
     def __instantiate_classifier(self):
         """
@@ -361,24 +314,24 @@ class LogReg(Classifier):
         If parameters were passed in the constructor of this class, then
         we pass them to sklearn.
         """
-        if self.__empty_parameters:
-            self.__clf = LogisticRegression(random_state=42)
+        if self.empty_parameters:
+            self.clf = LogisticRegression(random_state=42)
         else:
-            self.__clf = LogisticRegression(**self.__classifier_parameters)
+            self.clf = LogisticRegression(**self.classifier_parameters)
 
     def fit(self, X: list, Y: list = None):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
-        pipe = make_pipeline(self.__clf)
-        self.__pipe = pipe.fit(X, Y)
+        pipe = make_pipeline(self.clf)
+        self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
-        return self.__pipe.predict_proba(X_pred)
+        return self.pipe.predict_proba(X_pred)
 
 
 class DecisionTree(Classifier):
@@ -387,14 +340,9 @@ class DecisionTree(Classifier):
     The parameters one could pass are the same ones you would pass instantiating
     the classifier directly from sklearn
     """
+
     def __init__(self, **classifier_parameters):
-        super().__init__()
-        self.__classifier_parameters = classifier_parameters
-        self.__empty_parameters = False
-        if len(classifier_parameters) == 0:
-            self.__empty_parameters = True
-        self.__clf = None
-        self.__pipe = None
+        super().__init__(**classifier_parameters)
 
     def __instantiate_classifier(self):
         """
@@ -403,24 +351,24 @@ class DecisionTree(Classifier):
         If parameters were passed in the constructor of this class, then
         we pass them to sklearn.
         """
-        if self.__empty_parameters:
-            self.__clf = DecisionTreeClassifier(random_state=42)
+        if self.empty_parameters:
+            self.clf = DecisionTreeClassifier(random_state=42)
         else:
-            self.__clf = DecisionTreeClassifier(**self.__classifier_parameters)
+            self.clf = DecisionTreeClassifier(**self.classifier_parameters)
 
     def fit(self, X: list, Y: list = None):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
-        pipe = make_pipeline(self.__clf)
-        self.__pipe = pipe.fit(X, Y)
+        pipe = make_pipeline(self.clf)
+        self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
-        return self.__pipe.predict_proba(X_pred)
+        return self.pipe.predict_proba(X_pred)
 
 
 class GaussianProcess(Classifier):
@@ -429,14 +377,9 @@ class GaussianProcess(Classifier):
     The parameters one could pass are the same ones you would pass instantiating
     the classifier directly from sklearn
     """
+
     def __init__(self, **classifier_parameters):
-        super().__init__()
-        self.__classifier_parameters = classifier_parameters
-        self.__empty_parameters = False
-        if len(classifier_parameters) == 0:
-            self.__empty_parameters = True
-        self.__clf = None
-        self.__pipe = None
+        super().__init__(**classifier_parameters)
 
     def __instantiate_classifier(self):
         """
@@ -445,27 +388,27 @@ class GaussianProcess(Classifier):
         If parameters were passed in the constructor of this class, then
         we pass them to sklearn.
         """
-        if self.__empty_parameters:
-            self.__clf = GaussianProcessClassifier(random_state=42)
+        if self.empty_parameters:
+            self.clf = GaussianProcessClassifier(random_state=42)
         else:
-            self.__clf = GaussianProcessClassifier(**self.__classifier_parameters)
+            self.clf = GaussianProcessClassifier(**self.classifier_parameters)
 
     def fit(self, X: list, Y: list = None):
 
         self.__instantiate_classifier()
 
-        X = super().transform(X)
+        X = transform(self.transformer, X)
 
-        pipe = make_pipeline(self.__clf)
-        self.__pipe = pipe.fit(X, Y)
+        pipe = make_pipeline(self.clf)
+        self.pipe = pipe.fit(X, Y)
 
     def predict_proba(self, X_pred: list):
-        X_pred = super().transform(X_pred)
+        X_pred = transform(self.transformer, X_pred)
 
-        return self.__pipe.predict_proba(X_pred)
+        return self.pipe.predict_proba(X_pred)
 
 
-class ClassifierRecommender(RankingAlgorithm):
+class ClassifierRecommender(ItemFieldsRankingAlgorithm):
     """
        Class that implements recommendation through a specified Classifier.
        In the constructor must be specified parameter needed for the recommendations.
@@ -494,7 +437,7 @@ class ClassifierRecommender(RankingAlgorithm):
              alg.predict('U1', rating, 1, path)
 
        Args:
-           item_field (dict): dict where the key is the name of the field
+           item_fields (dict): dict where the key is the name of the field
                 that contains the content to use, value is the representation(s) that will be
                 used for the said item. The value of a field can be a string or a list,
                 use a list if you want to use multiple representations for a particular field.
@@ -508,51 +451,11 @@ class ClassifierRecommender(RankingAlgorithm):
                considered as positive
        """
 
-    def __init__(self, item_field: dict, classifier: Classifier, threshold: int = -1):
-        super().__init__('', '')
-        self.item_field = item_field
+    def __init__(self, item_fields: dict, classifier: Classifier, threshold: int = -1):
+        super().__init__(item_fields, threshold)
         self.__classifier = classifier
-        self.__threshold = threshold
 
-    def __calc_unrated_baglist(self, unrated_items: list):
-        """
-        Private functions that extracts features from unrated_items available locally.
-
-        If multiple representations of the item are specified in the constructor of the class,
-        we extract feature from all of them, otherwise if a single representation is specified,
-        we extract feature from that single representation.
-
-        Args:
-            unrated_items (list): unrated items available locally
-        Returns:
-            unrated_features_bag_list (list): list that contains features extracted
-                                        from the unrated_items
-        """
-
-        unrated_features_bag_list = []
-
-        for item in unrated_items:
-            if item is not None:
-                single_item_bag_list = []
-                for item_field in self.item_field:
-                    field_representations = self.item_field[item_field]
-
-                    if isinstance(field_representations, str):
-                        # We have only one representation
-                        representation = field_representations
-                        single_item_bag_list.append(
-                            item.get_field(item_field).get_representation(representation).value
-                        )
-                    else:
-                        for representation in field_representations:
-                            single_item_bag_list.append(
-                                item.get_field(item_field).get_representation(representation).value
-                            )
-            unrated_features_bag_list.append(single_item_bag_list)
-
-        return unrated_features_bag_list
-
-    def __calc_labels_rated_baglist(self, rated_items: list, ratings: pd.DataFrame, threshold: float):
+    def __calc_labels_rated_baglist(self, rated_items: list, ratings: pd.DataFrame):
         """
         Private functions that calculates labels of rated_items available locally and
         extracts features from them.
@@ -567,7 +470,6 @@ class ClassifierRecommender(RankingAlgorithm):
         Args:
             rated_items (list): rated items by the user available locally
             ratings (DataFrame): Dataframe which contains ratings given by the user
-            threshold (float): float that separates positive ratings from the negative ones
         Returns:
             labels (list): list of labels of the rated items
             rated_features_bag_list (list): list that contains features extracted
@@ -579,9 +481,8 @@ class ClassifierRecommender(RankingAlgorithm):
         for item in rated_items:
             if item is not None:
                 single_item_bag_list = []
-                for item_field in self.item_field:
-                    field_representations = self.item_field[item_field]
-
+                for item_field in self.item_fields:
+                    field_representations = self.item_fields[item_field]
                     if isinstance(field_representations, str):
                         # We have only one representation
                         representation = field_representations
@@ -593,11 +494,10 @@ class ClassifierRecommender(RankingAlgorithm):
                             single_item_bag_list.append(
                                 item.get_field(item_field).get_representation(representation).value
                             )
-
-            labels.append(
-                    1 if float(ratings[ratings['to_id'] == item.content_id].score) >= threshold else 0
-            )
-            rated_features_bag_list.append(single_item_bag_list)
+                labels.append(
+                        1 if float(ratings[ratings['to_id'] == item.content_id].score) >= self.threshold else 0
+                )
+                rated_features_bag_list.append(single_item_bag_list)
 
         if len(labels) == 0:
             raise FileNotFoundError("No rated item available locally!\n"
@@ -611,12 +511,12 @@ class ClassifierRecommender(RankingAlgorithm):
 
         return labels, rated_features_bag_list
 
-    def predict(self, user_id: str, ratings: pd.DataFrame, recs_number: int, items_directory: str,
+    def predict(self, ratings: pd.DataFrame, recs_number: int, items_directory: str,
                 candidate_item_id_list: List = None) -> pd.DataFrame:
         """
         Get recommendations for a specified user.
 
-        You must pass the user_id, the DataFrame which contains the ratings of the user, how many
+        You must pass the the DataFrame which contains the ratings of the user, how many
         recommended item the method predict() must return, and the path of the items.
         If recommendation for certain item is needed, specify them in candidate_item_id_list
         parameter. In this case, the recommender system will return only scores for the items
@@ -632,7 +532,6 @@ class ClassifierRecommender(RankingAlgorithm):
              alg.predict('A000', ratings, 1, path, ['tt0114576'])
 
         Args:
-            user_id (str): user for which recommendations will be computed
             ratings (pd.DataFrame): ratings of the user with id equal to user_id
             recs_number (int): How long the ranking will be
             items_directory (str): Path to the directory where the items are stored.
@@ -642,35 +541,18 @@ class ClassifierRecommender(RankingAlgorithm):
             The predicted classes, or the predict values.
         """
 
-        # Load unrated items from the path
-        if candidate_item_id_list is None:
-            unrated_items = get_unrated_items(items_directory, ratings)
-        else:
-            unrated_items = [load_content_instance(items_directory, item_id) for item_id in candidate_item_id_list]
-
-        # Load rated items from the path
-        rated_items = get_rated_items(items_directory, ratings)
-
-        # If threshold is the min possible (range is [-1, 1]), we calculate the mean value
-        # of all the ratings and set it as the threshold
-        if self.__threshold == -1:
-            threshold = pd.to_numeric(ratings["score"], downcast="float").mean()
-        else:
-            threshold = self.__threshold
-
-        # Calculates labels and extract features from the rated items
+        # Loads the items and extracts features from the unrated items, then
+        # calculates labels and extracts features from the rated items
         # If exception, returns an empty score_frame
         try:
-            labels, rated_features_bag_list = \
-                self.__calc_labels_rated_baglist(rated_items, ratings, threshold)
-        except (ValueError, FileNotFoundError) as e:
+            rated_items, unrated_items, unrated_features_bag_list = \
+                super().preprocessing(items_directory, ratings, candidate_item_id_list)
+            labels, rated_features_bag_list = self.__calc_labels_rated_baglist(rated_items, ratings)
+        except(ValueError, FileNotFoundError) as e:
             logger.warning(str(e))
             columns = ["to_id", "rating"]
             score_frame = pd.DataFrame(columns=columns)
             return score_frame
-
-        # Extract features from unrated items
-        unrated_features_bag_list = self.__calc_unrated_baglist(unrated_items)
 
         # If the classifier chosen is SVM we calc how many folds the classifier
         # can do. If no folds is possible, no folds will be executed
@@ -686,10 +568,9 @@ class ClassifierRecommender(RankingAlgorithm):
         score_labels = self.__classifier.predict_proba(unrated_features_bag_list)
 
         for score, item in zip(score_labels, unrated_items):
-            if item is not None:
-                score_frame = pd.concat(
-                    [score_frame, pd.DataFrame.from_records([(item.content_id, score[1])], columns=columns)],
-                    ignore_index=True)
+            score_frame = pd.concat(
+                [score_frame, pd.DataFrame.from_records([(item.content_id, score[1])], columns=columns)],
+                ignore_index=True)
 
         score_frame = score_frame.sort_values(['rating'], ascending=False).reset_index(drop=True)
         score_frame = score_frame[:recs_number]
