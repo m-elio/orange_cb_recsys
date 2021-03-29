@@ -4,6 +4,7 @@ from unittest import TestCase
 from orange_cb_recsys.recsys import NXPageRank
 from orange_cb_recsys.recsys.graphs.full_graphs import NXFullGraph
 from orange_cb_recsys.utils.const import logger
+from orange_cb_recsys.utils.feature_selection import NXFSPageRank
 
 ratings = pd.DataFrame.from_records([
             ("A000", "tt0114576", 0.5, "54654675"),
@@ -21,8 +22,12 @@ graph = NXFullGraph(ratings)
 
 class TestNXPageRank(TestCase):
     def test_predict(self):
-        alg = NXPageRank(graph=graph)
         user_ratings = ratings[ratings['from_id'] == 'A001']
+        alg = NXPageRank()
+        rank = alg.predict(user_ratings, 2)
+        self.assertEqual(rank, {})
+
+        alg = NXPageRank(graph=graph)
         rank = alg.predict(user_ratings, 1)
         logger.info('pg_rk results')
         for r in rank.keys():
@@ -51,12 +56,12 @@ class PageRankAlg(TestCase):
         alg = NXPageRank(graph=graph)
 
         # remove from rank all from nodes
-        result = alg.clean_rank(rank, user_id="A000", remove_profile=False, remove_from_nodes=True)
+        result = alg.clean_rank(rank, remove_profile=False, remove_from_nodes=True)
         expected = {"tt0114576": 0.5, "tt0113497": 0.5, "tt0112453": 0.5}
         self.assertEqual(expected, result)
 
         # remove from rank all from nodes and all data from user A000
-        result = alg.clean_rank(rank, user_id="A000", remove_profile=True, remove_from_nodes=True)
+        result = alg.clean_rank(rank, remove_profile=True, remove_from_nodes=True)
         expected = {"tt0113497": 0.5}
         self.assertEqual(expected, result)
 
