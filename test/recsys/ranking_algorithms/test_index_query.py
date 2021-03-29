@@ -42,11 +42,11 @@ class TestIndexQuery(TestCase):
 
         t_index = IndexQuery(classic_similarity=False)
 
-        ranking = t_index.predict(user_id='A000', ratings=ratings, recs_number=2, items_directory=path)
+        ranking = t_index.predict(ratings=ratings, recs_number=2, items_directory=path)
 
         self.assertEqual(2, len(ranking['to_id'].values))
 
-        ranking = t_index.predict(user_id='A000', ratings=ratings, recs_number=2, items_directory=path,
+        ranking = t_index.predict(ratings=ratings, recs_number=2, items_directory=path,
                                   candidate_item_id_list=['tt0114576', 'tt0113987'])
 
         self.assertIn('tt0114576', ranking['to_id'].values)

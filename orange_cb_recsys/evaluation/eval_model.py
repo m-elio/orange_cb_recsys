@@ -117,12 +117,12 @@ class RankingAlgEvalModel(EvalModel):
                 result_dict = {}
                 train = user_ratings.iloc[partition_index[0]]
                 test = user_ratings.iloc[partition_index[1]]
+                test = remove_not_existent_items(test, self.config.items_directory)
 
                 truth = test.loc[:, 'to_id':'score']
                 truth.columns = ["to_id", "rating"]
                 recs_number = len(truth['rating'].values)
-                predictions = recsys.fit_eval_ranking(
-                    user_id, train, truth['to_id'].tolist(), recs_number)
+                predictions = recsys.fit_eval_ranking(train, truth['to_id'].tolist(), recs_number)
                 for metric in self.metrics:
                     result_dict['from'] = user_id
                     result_dict[str(metric)] = metric.perform(predictions, truth)
