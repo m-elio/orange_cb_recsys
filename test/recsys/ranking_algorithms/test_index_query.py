@@ -45,3 +45,11 @@ class TestIndexQuery(TestCase):
         self.assertIn('tt0114576', ranking['to_id'].values)
         self.assertIn('tt0113987', ranking['to_id'].values)
         self.assertEqual(2, len(ranking['to_id'].values))
+
+        ranking = t_index.predict(ratings=ratings, recs_number=-2, items_directory=filepath)
+        self.assertEqual(0, len(ranking))
+
+        path = 'test/for/wrong/items/directory'
+        ranking = t_index.predict(ratings=ratings, recs_number=2, items_directory=path)
+
+        self.assertEqual(0, len(ranking))

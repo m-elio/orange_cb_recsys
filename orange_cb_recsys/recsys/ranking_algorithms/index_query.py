@@ -5,9 +5,9 @@ from orange_cb_recsys.recsys.algorithm import RankingAlgorithm
 import pandas as pd
 
 from orange_cb_recsys.utils.const import DEVELOPING, home_path, logger
-from orange_cb_recsys.utils.load_content import load_content_instance, remove_not_existent_items
+from orange_cb_recsys.utils.load_content import load_content_instance
 
-from whoosh.index import open_dir
+from whoosh.index import open_dir, EmptyIndexError
 from whoosh.query import Term, Or
 from whoosh.qparser import QueryParser
 from whoosh import scoring, qparser
@@ -45,6 +45,7 @@ class IndexQuery(RankingAlgorithm):
         Returns:
             score_frame (pd.DataFrame): dataFrame containing the recommendations for the user
         """
+
         ix = open_dir(items_directory)
         with ix.searcher(weighting=scoring.TF_IDF if self.__classic_similarity else scoring.BM25F) as searcher:
 
@@ -101,7 +102,7 @@ class IndexQuery(RankingAlgorithm):
                 candidate_query_list = Or(candidate_query_list)
 
             # The filter and mask arguments of the index searcher are used respectively
-            # to find only candidate documents or to ignore documents rated by the user
+            # to find only candidate documents and to ignore documents rated by the user
             schema = ix.schema
             query = QueryParser("content_id", schema=schema, group=qparser.OrGroup).parse(string_query)
             score_docs = searcher.search(query, limit=recs_number, filter=candidate_query_list, mask=rated_query_list)
@@ -128,7 +129,7 @@ class IndexQuery(RankingAlgorithm):
         the document it refers to is considered liked by the user)
         After that, calls __recs_query to execute the prediction
         Args:
-            ratings (pd.DataFrame): ratings of a specific user
+            ratings (pd.DataFrame): ratings of the user with id equal to user_id
             recs_number (int): how long the ranking will be
             items_directory (str): name of the directory where the items are stored
             candidate_item_id_list (list): list of the items that can be recommended, if None
@@ -149,18 +150,24 @@ class IndexQuery(RankingAlgorithm):
         if not DEVELOPING:
             index_path = os.path.join(home_path, items_directory, 'search_index')
 
-        valid_ratings = remove_not_existent_items(ratings, items_directory)
         scores = []
         positive_rated_document_list = []
-        for item_id, score in zip(valid_ratings.to_id, valid_ratings.score):
+        for item_id, score in zip(ratings.to_id, ratings.score):
             if score > self.__positive_threshold:
                 item = load_content_instance(items_directory, item_id)
-                positive_rated_document_list.append(item.index_document_id)
-                scores.append(score)
+                if item is not None:
+                    positive_rated_document_list.append(item.index_document_id)
+                    scores.append(score)
 
-        return self.__recs_query(positive_rated_document_list,
-                                 valid_ratings.to_id,
-                                 scores,
-                                 recs_number,
-                                 index_path,
-                                 candidate_item_id_list)
+        try:
+            return self.__recs_query(positive_rated_document_list,
+                                     ratings.to_id,
+                                     scores,
+                                     recs_number,
+                                     index_path,
+                                     candidate_item_id_list)
+        except (ValueError, EmptyIndexError) as e:
+            logger.warning(str(e))
+            columns = ["to_id", "rating"]
+            score_frame = pd.DataFrame(columns=columns)
+            return score_frame

@@ -1,12 +1,32 @@
 from unittest import TestCase
 import numpy as np
+from whoosh.index import open_dir
+from whoosh.query import Every
 
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.embedding_technique.combining_technique import \
     Centroid
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.embedding_technique.embedding_source import \
     GensimDownloader
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.field_content_production_technique import \
-    EmbeddingTechnique
+    EmbeddingTechnique, SearchIndexing
+from orange_cb_recsys.content_analyzer.memory_interfaces.text_interface import IndexInterface
+
+
+class TestSearchIndexing(TestCase):
+    def test_produce_content(self):
+        technique = SearchIndexing()
+        index = IndexInterface('./search-index')
+        index.init_writing()
+        index.new_content()
+        technique.produce_content('Plot', '0', 'this is a test for the search index', index)
+        index.serialize_content()
+        index.stop_writing()
+        ix = open_dir('./search-index')
+        with ix.searcher() as searcher:
+            query = Every()
+            results = searcher.search(query)
+            self.assertEqual(results[0]['Plot0'], 'this is a test for the search index')
+        index.delete_index()
 
 
 class TestEmbeddingTechnique(TestCase):

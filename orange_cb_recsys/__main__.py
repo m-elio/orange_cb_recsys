@@ -68,17 +68,13 @@ def dict_detector(technique_dict):
 def content_config_run(config_list: List[Dict]):
     for content_config in config_list:
         # content production
-        search_index = False
-        if 'search_index' in content_config.keys():
-            search_index = content_config['search_index']
 
         content_analyzer_config = ContentAnalyzerConfig(
             content_config["content_type"],
             runnable_instances[content_config['source_type']]
             (file_path=content_config["raw_source_path"]),
             content_config['id_field_name'],
-            content_config['output_directory'],
-            search_index)
+            content_config['output_directory'])
 
         if 'get_lod_properties' in content_config.keys():
             for ex_retrieval in content_config['get_lod_properties']:
