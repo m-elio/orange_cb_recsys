@@ -9,7 +9,7 @@ from orange_cb_recsys.content_analyzer import ContentAnalyzer, ContentAnalyzerCo
 from orange_cb_recsys.content_analyzer.content_representation.content_field import StringField, FeaturesBagField, \
     EmbeddingField
 from orange_cb_recsys.content_analyzer.field_content_production_techniques import EmbeddingTechnique, \
-    Centroid, GensimDownloader
+    Centroid, GensimDownloader, SearchIndexing
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.entity_linking import BabelPyEntityLinking
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.tf_idf import SkLearnTfIdf
 from orange_cb_recsys.content_analyzer.information_processor import NLTK
@@ -56,6 +56,26 @@ class TestContentsProducer(TestCase):
                 pipelines_list=[FieldRepresentationPipeline(
                     content_technique=SkLearnTfIdf())]
             ))
+
+        content_analyzer = ContentAnalyzer(movies_ca_config)
+        content_analyzer.fit()
+
+    def test_create_content_search_index(self):
+        movies_ca_config = ContentAnalyzerConfig(
+            content_type='Item',
+            source=JSONFile(file_path),
+            id_field_name_list=['imdbID'],
+            output_directory='movielens_test'
+        )
+
+        movies_ca_config.append_field_config(
+            field_name='Title',
+            field_config=FieldConfig(
+                pipelines_list=[FieldRepresentationPipeline(
+                    content_technique=SearchIndexing()
+                )]
+            )
+        )
 
         content_analyzer = ContentAnalyzer(movies_ca_config)
         content_analyzer.fit()
