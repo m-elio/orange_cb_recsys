@@ -148,8 +148,6 @@ class ContentAnalyzerConfig:
             store the config for each field_name
         output_directory (str):
             path of the results serialized content instance
-        search_index (bool):
-            True if in the technique a sarch indexing is specified
         field_config_dict:
             FieldConfig instance specified
             for each field you want to produce
@@ -162,18 +160,12 @@ class ContentAnalyzerConfig:
                  source: RawInformationSource,
                  id_field_name_list: List[str],
                  output_directory: str,
-                 search_index=False,
                  field_config_dict: Dict[str, FieldConfig] = None,
                  exogenous_properties_retrieval: List[ExogenousPropertiesRetrieval] = None):
         if field_config_dict is None:
             field_config_dict = {}
         if exogenous_properties_retrieval is None:
             exogenous_properties_retrieval = []
-
-        if type(search_index) is str:
-            self.__search_index = search_index.lower() == 'true'
-        else:
-            self.__search_index = search_index
 
         self.__output_directory: str = output_directory + str(time.time())
         self.__content_type = content_type.lower()
@@ -192,10 +184,6 @@ class ContentAnalyzerConfig:
     def exogenous_properties_retrieval(self) -> ExogenousPropertiesRetrieval:
         for ex_retrieval in self.__exogenous_properties_retrieval:
             yield ex_retrieval
-
-    @property
-    def search_index(self):
-        return self.__search_index
 
     @property
     def output_directory(self):

@@ -67,12 +67,6 @@ class ContentAnalyzer:
             output_path = os.path.join(home_path, 'contents', self.__config.output_directory)
         os.mkdir(output_path)
 
-        indexer = None
-        if self.__config.search_index:
-            index_path = os.path.join(output_path, 'search_index')
-            indexer = IndexInterface(index_path)
-            indexer.init_writing()
-
         contents_producer = ContentsProducer.get_instance()
         contents_producer.set_config(self.__config)
 
@@ -81,7 +75,6 @@ class ContentAnalyzer:
             interface.init_writing()
 
         self.__dataset_refactor()
-        contents_producer.set_indexer(indexer)
         i = 0
         for raw_content in self.__config.source:
             logger.info("Processing item %d", i)
@@ -89,8 +82,12 @@ class ContentAnalyzer:
             content.serialize(output_path)
             i += 1
 
-        if self.__config.search_index:
-            indexer.stop_writing()
+        # once all the data has been processed, if the contents_producer used the search index, everything regarding
+        # the index is cleared and set to normal
+        if contents_producer.indexer_need:
+            contents_producer.indexer.stop_writing()
+            contents_producer.indexer_need = False
+            contents_producer.delete_indexer()
 
         for interface in interfaces:
             interface.stop_writing()
@@ -133,16 +130,30 @@ class ContentsProducer:
     def __init__(self):
         self.__config: ContentAnalyzerConfig = None
         self.__indexer = None
+        self.__indexer_need = False
+        self.__CONTENT_ID = "content_id"
         # Virtually private constructor.
         if ContentsProducer.__instance is not None:
             raise Exception("This class is a singleton!")
         ContentsProducer.__instance = self
 
-    def set_indexer(self, indexer: IndexInterface):
-        self.__indexer = indexer
+    @property
+    def indexer(self):
+        return self.__indexer
+
+    @property
+    def indexer_need(self):
+        return self.__indexer_need
+
+    @indexer_need.setter
+    def indexer_need(self, indexer_need):
+        self.__indexer_need = indexer_need
 
     def set_config(self, config: ContentAnalyzerConfig):
         self.__config = config
+
+    def delete_indexer(self):
+        del self.__indexer
 
     def __get_timestamp(self, raw_content: Dict) -> str:
         """
@@ -198,7 +209,7 @@ class ContentsProducer:
             elif isinstance(pipeline.content_technique, SingleContentTechnique):
                 field.append(str(i), self.__create_representation(str(i), field_data, pipeline))
             elif isinstance(pipeline.content_technique, SearchIndexing):
-                self.__invoke_indexing_technique(field_name, field_data, pipeline)
+                self.__invoke_indexing_technique(field_name, field_data, pipeline, content_id)
             elif pipeline.content_technique is None:
                 self.__decode_field_data(field, str(i), field_data)
 
@@ -248,11 +259,21 @@ class ContentsProducer:
             field.append(field_name, result)
 
     def __invoke_indexing_technique(self, field_name: str, field_data: str,
-                                    pipeline: FieldRepresentationPipeline):
+                                    pipeline: FieldRepresentationPipeline, content_id: str):
         preprocessor_list = pipeline.preprocessor_list
         processed_field_data = field_data
         for preprocessor in preprocessor_list:
             processed_field_data = preprocessor.process(processed_field_data)
+
+        # if it's the first time the technique is called it means that the search_index has not been created yet
+        # so it is initialized and the attribute used to signal that the search_index is being used is set to true
+        if not self.__indexer_need:
+            index_path = os.path.join(self.__config.output_directory, 'search_index')
+            self.__indexer = IndexInterface(index_path)
+            self.__indexer.init_writing()
+            self.__indexer.new_content()
+            self.__indexer.new_field(self.__CONTENT_ID, content_id)
+            self.__indexer_need = True
 
         pipeline.content_technique.produce_content(field_name,
                                                    str(pipeline), processed_field_data,
@@ -305,8 +326,6 @@ class ContentsProducer:
         if self.__config is None:
             raise Exception("You must set a config with set_config()")
 
-        CONTENT_ID = "content_id"
-
         timestamp = self.__get_timestamp(raw_content)
 
         # construct id from the list of the fields that compound id
@@ -317,14 +336,14 @@ class ContentsProducer:
             lod_properties = ex_retrieval.get_properties(str(i), raw_content)
             content.append_exogenous_rep(str(i), lod_properties)
 
-        if self.__indexer is not None:
+        if self.__indexer_need:
             self.__indexer.new_content()
-            self.__indexer.new_field(CONTENT_ID, content_id)
+            self.__indexer.new_field(self.__CONTENT_ID, content_id)
 
         interfaces = self.__config.get_interfaces()
         for interface in interfaces:
             interface.new_content()
-            interface.new_field(CONTENT_ID, content_id)
+            interface.new_field(self.__CONTENT_ID, content_id)
 
         # produce
         for field_name in self.__config.get_field_name_list():
@@ -334,7 +353,7 @@ class ContentsProducer:
                            self.__create_field
                            (raw_content, field_name, content_id, timestamp))
 
-        if self.__indexer is not None:
+        if self.__indexer_need:
             content.index_document_id = self.__indexer.serialize_content()
 
         for interface in interfaces:
