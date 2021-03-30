@@ -1,10 +1,12 @@
+import os
 from unittest import TestCase
 
 from orange_cb_recsys.content_analyzer.raw_information_source import SQLDatabase, CSVFile, JSONFile, DATFile
 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 class TestSQLDatabase(TestCase):
-
     def test_iter(self):
         self.skipTest("FIX TEST")
         sql = SQLDatabase('localhost', 'root', 'password', 'prova', 'tabella')
@@ -20,13 +22,7 @@ class TestSQLDatabase(TestCase):
 class TestCSVFile(TestCase):
 
     def test_iter(self):
-        filepath = '../../datasets/movies_info_reduced.csv'
-        try:
-            with open(filepath):
-                pass
-        except FileNotFoundError:
-            filepath = 'datasets/movies_info_reduced.csv'
-
+        filepath = os.path.join(THIS_DIR, "../../datasets/movies_info_reduced.csv")
         csv = CSVFile(filepath)
         my_iter = iter(csv)
         d1 = {"Title": "Jumanji", "Year": "1995", "Rated": "PG", "Released": "15 Dec 1995", "Runtime": "104 min",
@@ -71,12 +67,7 @@ class TestCSVFile(TestCase):
 class TestJSONFile(TestCase):
 
     def test_iter(self):
-        filepath = '../../datasets/movies_info_reduced.json'
-        try:
-            with open(filepath):
-                pass
-        except FileNotFoundError:
-            filepath = 'datasets/movies_info_reduced.json'
+        filepath = os.path.join(THIS_DIR, "../../datasets/movies_info_reduced.json")
 
         csv = JSONFile(filepath)
         my_iter = iter(csv)
@@ -124,14 +115,10 @@ class TestJSONFile(TestCase):
         self.assertDictEqual(next(my_iter), d2)
         self.assertDictEqual(next(my_iter), d3)
 
+
 class TestDATFile(TestCase):
     def test_iter(self):
-        filepath = '../../datasets/examples/users_70.dat'
-        try:
-            with open(filepath):
-                pass
-        except FileNotFoundError:
-            filepath = 'datasets/examples/users_70.dat'
+        filepath = os.path.join(THIS_DIR, "../../datasets/examples/users_70.dat")
 
         dat = DATFile(filepath)
         my_iter = iter(dat)

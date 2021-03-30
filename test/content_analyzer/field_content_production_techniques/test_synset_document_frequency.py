@@ -15,6 +15,4 @@ class TestSynsetDocumentFrequency(TestCase):
 
         expected = [wn.synset('beautiful.s.02'), wn.synset('beautiful.s.02'),
                     wn.synset('besides.r.02'), wn.synset('hello.n.01')]
-
-
         self.assertEqual(result, expected)

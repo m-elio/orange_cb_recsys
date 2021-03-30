@@ -1,5 +1,5 @@
 from unittest import TestCase
-
+import pathlib as pl
 from orange_cb_recsys.evaluation import Precision, Recall, FNMeasure, NDCG, MRR, Correlation, GiniIndex, \
     PopRecsCorrelation, LongTailDistr, CatalogCoverage, PopRatioVsRecs, DeltaGap, Serendipity, Novelty
 import pandas as pd
@@ -68,6 +68,15 @@ class Test(TestCase):
             "kendall": 0.14,
             "spearman": 0.19,
         }
+        for x in results.keys():
+            a = round((int(results[x])), 2)
+            results[x] = a
+
+        for x in real_results.keys():
+            a = round((int(real_results[x])), 2)
+            real_results[x] = a
+
+        self.assertEqual(results, real_results)
 
     def test_NDCG(self):
         score_frame = pd.DataFrame.from_dict({'to_id': ["bbb", "eee", "aaa", "ddd", "ccc", "fff", "hhh", "ggg"],
@@ -75,31 +84,67 @@ class Test(TestCase):
         truth_frame = pd.DataFrame.from_dict({'to_id': ["aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh"],
                                               'rating': [0.8, 0.7, -0.4, 1.0, 0.4, 0.1, -0.3, 0.7]})
 
-        NDCG().perform(predictions=score_frame, truth=truth_frame)
+        ndcg_test1 = NDCG().perform(predictions=score_frame, truth=truth_frame)
+        self.assertTrue(0.0 <= ndcg_test1 <= 1.0)
 
-        NDCG({}).perform(predictions=score_frame, truth=truth_frame)
+        ndcg_test2 = NDCG({}).perform(predictions=score_frame, truth=truth_frame)
+        self.assertTrue(0.0 <= ndcg_test2 <= 1.0)
 
         split_dict = {1: (-0.5, 0.0), 2: (0.0, 0.5), 3: (0.5, 1.0)}
-        NDCG(split_dict).perform(predictions=score_frame, truth=truth_frame)
+        ndcg_test3 = NDCG(split_dict).perform(predictions=score_frame, truth=truth_frame)
+        self.assertTrue(0.0 <= ndcg_test3 <= 1.0)
 
         split_dict = {0: (-1.0, -0.5), 1: (-0.5, 0.0), 2: (0.0, 0.5), 3: (0.5, 1.0)}
-        NDCG(split_dict).perform(predictions=score_frame, truth=truth_frame)
+        ndcg_test4 = NDCG(split_dict).perform(predictions=score_frame, truth=truth_frame)
+        self.assertTrue(0.0 <= ndcg_test4 <= 1.0)
 
     def test_perform_fairness_metrics(self):
-        GiniIndex().perform(score_frame_fairness)
+        gini_index = GiniIndex().perform(score_frame_fairness)
+        self.assertEqual(round(gini_index["gini-index"][0], 3), 0.167)
+        self.assertEqual(round(gini_index["gini-index"][1], 3), 0.364)
+        self.assertEqual(round(gini_index["gini-index"][2], 3), 0.000)
+        self.assertEqual(round(gini_index["gini-index"][3], 3), 0.033)
         PopRecsCorrelation('test', '.').perform(score_frame_fairness, truth_frame_fairness)
+        path_pop_recs = pl.Path("./pop-recs_test.svg")
+        self.assertEqual((str(path_pop_recs), path_pop_recs.is_file()), (str(path_pop_recs), True))
+
         LongTailDistr('test', '.').perform(score_frame_fairness, truth_frame_fairness)
-        CatalogCoverage().perform(score_frame_fairness, truth_frame_fairness)
-        PopRatioVsRecs('test', '.', {'niche': 0.2, 'diverse': 0.6, 'bb_focused': 0.2}, False).perform(
-            score_frame_fairness,
-            truth_frame_fairness)
-        DeltaGap({'niche': 0.2, 'diverse': 0.6, 'bb_focused': 0.2})
+        path_long_tail_distr = pl.Path("./recs-long-tail-distr_test.svg")
+        self.assertEqual((str(path_long_tail_distr), path_long_tail_distr.is_file()), (str(path_long_tail_distr), True))
+
+        catalog_coverage = CatalogCoverage().perform(score_frame_fairness, truth_frame_fairness)
+        self.assertEqual(catalog_coverage, 100)
+
+        pop_ratio_vs_recs = PopRatioVsRecs('test', '.', {'niche': 0.2, 'diverse': 0.6, 'bb_focused': 0.2}, False).\
+            perform(score_frame_fairness, truth_frame_fairness)
+        path_pop_ratio_vs_recs = pl.Path("./pop_ratio_profile_vs_recs_test.svg")
+        self.assertEqual((str(path_pop_ratio_vs_recs), path_pop_ratio_vs_recs.is_file()), (str(path_pop_ratio_vs_recs),
+                                                                                           True))
+        list_profile = pop_ratio_vs_recs["profile_pop_ratio"].to_list()
+        value_list = [item for sublist in list_profile for item in sublist]
+        for v in value_list:
+            self.assertTrue(0.0 <= v <= 1.0)
+        list_recs = pop_ratio_vs_recs["recs_pop_ratio"].to_list()
+        value_list_recs = [item for sublist in list_recs for item in sublist]
+        for v in value_list_recs:
+            self.assertTrue(0.0 <= v <= 1.0)
+
+        delta = DeltaGap({'niche': 0.2, 'diverse': 0.6, 'bb_focused': 0.2}).perform(score_frame_fairness,
+                                                                                    truth_frame_fairness)
+        list_delta = delta["delta-gap"].to_list()
+        self.assertEqual(len(list_delta), 3)
+        print(delta)
 
     def test_perform_serendipity(self):
-        Serendipity(10).perform(score_frame_fairness, truth_frame_fairness)
+        true_serendipity = 0.175
+        serendipity = Serendipity(10).perform(score_frame_fairness, truth_frame_fairness)
+        self.assertEqual(round(serendipity, 3), true_serendipity)
 
     def test_perform_novelty(self):
-        Novelty(10).perform(score_frame_fairness, truth_frame_fairness)
+        true_novelty = 0.3165
+        novelty = Novelty(10).perform(score_frame_fairness, truth_frame_fairness)
+        novelty = round(novelty, 4)
+        self.assertEqual(novelty, true_novelty)
 
     def test_perform_rmse(self):
         predictions = pd.DataFrame.from_dict({'to_id': ["bbb", "eee", "aaa", "ddd", "ccc", "fff", "hhh"],
@@ -110,8 +155,16 @@ class Test(TestCase):
         self.assertEqual(RMSE().perform(predictions, truth), 0.9258200997725514)
         self.assertEqual(MAE().perform(predictions, truth), 0.5714285714285714)
 
-        truth = pd.DataFrame.from_dict({'to_id': ["aaa", "bbb", "ccc", "ddd", "eee", "fff"],
-                                        'scores': [5, 4, 3, 3, 1, 2]})
+        truth_exception = pd.DataFrame.from_dict({'to_id': ["aaa", "bbb", "ccc", "ddd", "eee", "fff"],
+                                                  'scores': [5, 4, 3, 3, 1, 2]})
 
         with self.assertRaises(Exception):
-            RMSE().perform(predictions, truth)
+            RMSE().perform(predictions, truth_exception)
+
+        less_predictions = predictions[:-1]
+        self.assertEqual(round(RMSE().perform(less_predictions, truth)), 1.0)
+        self.assertEqual(round(MAE().perform(less_predictions, truth), 3), 0.667)
+
+        less_truth = truth[:-1]
+        self.assertEqual(round(RMSE().perform(predictions, less_truth)), 1.0)
+        self.assertEqual(round(MAE().perform(predictions, less_truth), 3), 0.667)
