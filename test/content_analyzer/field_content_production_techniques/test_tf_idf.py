@@ -22,7 +22,7 @@ class TestWhooshTfIdf(TestCase):
 
             self.assertEqual(features['years'], 0.6989700043360189)
         except AttributeError:
-            pass
+            self.fail("Couldn't load feature bag!")
 
 
 class TestSkLearnTfIDF(TestCase):
