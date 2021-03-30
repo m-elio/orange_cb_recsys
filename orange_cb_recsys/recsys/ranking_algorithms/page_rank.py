@@ -33,7 +33,7 @@ class PageRankAlg(RankingAlgorithm):
     @abstractmethod
     def predict(self, ratings: pd.DataFrame, recs_number: int, items_directory: str,
                 candidate_item_id_list: List = None):
-        raise NotImplemented
+        raise NotImplementedError
 
     def clean_rank(self, rank: Dict, user_id: str,
                    remove_from_nodes: bool = True,

@@ -1,10 +1,13 @@
 from unittest import TestCase
-
 import os
+
+import gensim
 
 from orange_cb_recsys.content_analyzer.embedding_learner.latent_semantic_analysis import GensimLatentSemanticAnalysis
 from orange_cb_recsys.content_analyzer.information_processor.nlp import NLTK
 from orange_cb_recsys.content_analyzer.raw_information_source import JSONFile
+
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class TestEmbeddingLearner(TestCase):
@@ -31,14 +34,7 @@ class TestEmbeddingLearner(TestCase):
                     ['four', 'room', '25', 'dec', '1995'],
                     ['money', 'train', '22', 'nov', '1995'],
                     ['ace', 'ventura', ':', 'natur', 'call', '10', 'nov', '1995']]
-
-        file_path = "datasets/movies_info_reduced.json"
-        try:
-            with open(file_path):
-                pass
-        except FileNotFoundError:
-            file_path = "../../../datasets/movies_info_reduced.json"
-
+        file_path = os.path.join(THIS_DIR, "../../../datasets/movies_info_reduced.json")
         src = JSONFile(file_path)
         learner = GensimLatentSemanticAnalysis(src, preprocessor, fields)
         generated = learner.extract_corpus()
@@ -48,15 +44,15 @@ class TestEmbeddingLearner(TestCase):
     def test_save(self):
         preprocessor = NLTK(stopwords_removal=True)
         fields = ["Plot"]
-        try:
-            src = JSONFile("datasets/movies_info_reduced.json")
-            learner = GensimLatentSemanticAnalysis(src, preprocessor, fields)
-            learner.fit()
-        except FileNotFoundError:
-            src = JSONFile("../../../datasets/movies_info_reduced.json")
-            learner = GensimLatentSemanticAnalysis(src, preprocessor, fields)
-            learner.fit()
+        file_path = os.path.join(THIS_DIR, "../../../datasets/movies_info_reduced.json")
+        src = JSONFile(file_path)
+        learner = GensimLatentSemanticAnalysis(src, preprocessor, fields)
+        learner.fit()
         learner.save()
-
-
-
+        """
+        path = os.path.join(THIS_DIR, "*.model")
+        x = sorted(glob.glob(path))[-1]
+        dynamic_path = pl.Path(x)
+        self.assertEqual((str(dynamic_path), dynamic_path.is_file()), (str(dynamic_path), True))
+        """
+        self.assertIsInstance(learner.model, gensim.models.lsimodel.LsiModel)

@@ -42,17 +42,9 @@ class Classifier(ABC):
     def classifier_parameters(self):
         return self.__classifier_parameters
 
-    @classifier_parameters.setter
-    def classifier_parameters(self, **classifier_parameters):
-        self.__classifier_parameters = classifier_parameters
-
     @property
     def empty_parameters(self):
         return self.__empty_parameters
-
-    @empty_parameters.setter
-    def empty_parameters(self, empty_parameters):
-        self.__empty_parameters = empty_parameters
 
     @property
     def clf(self):

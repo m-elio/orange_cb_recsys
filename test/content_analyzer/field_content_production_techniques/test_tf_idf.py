@@ -1,18 +1,16 @@
+import os
 from unittest import TestCase
 
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.tf_idf import WhooshTfIdf, SkLearnTfIdf
 from orange_cb_recsys.content_analyzer.information_processor.nlp import NLTK
 from orange_cb_recsys.content_analyzer.raw_information_source import JSONFile
 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(THIS_DIR, "../../../datasets/movies_info_reduced.json")
+
 
 class TestWhooshTfIdf(TestCase):
     def test_produce_content(self):
-        file_path = '../../../datasets/movies_info_reduced.json'
-        try:
-            with open(file_path):
-                pass
-        except FileNotFoundError:
-            file_path = 'datasets/movies_info_reduced.json'
         try:
             technique = WhooshTfIdf()
             technique.field_need_refactor = "Plot"
@@ -24,18 +22,11 @@ class TestWhooshTfIdf(TestCase):
 
             self.assertEqual(features['years'], 0.6989700043360189)
         except AttributeError:
-            pass
+            self.fail("Couldn't load feature bag!")
 
 
 class TestSkLearnTfIDF(TestCase):
     def test_produce_content(self):
-        file_path = '../../../datasets/movies_info_reduced.json'
-        try:
-            with open(file_path):
-                pass
-        except FileNotFoundError:
-            file_path = 'datasets/movies_info_reduced.json'
-
         technique = SkLearnTfIdf()
         technique.field_need_refactor = "Plot"
         technique.pipeline_need_refactor = str(1)

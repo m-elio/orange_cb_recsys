@@ -16,11 +16,15 @@ class Test(TestCase):
 
         add('test2', 'test_cat', 'preprocessor')
 
-        try:
+        with self.assertRaises(ValueError):
             add('test2', 'test_cat', 'test_fail')
-        except ValueError:
-            pass
-
+        add('test2', 'test_cat')
+        self.assertEqual(len(get().keys()), 19)
+        remove('test3')
+        self.assertEqual(len(get().keys()), 19)
+        remove('test2')
         show(True)
 
-        print(get_cat('preprocessor'))
+        x = get_cat('preprocessor')
+        self.assertIn("nltk", x)
+        self.assertNotIn("embedding", x)

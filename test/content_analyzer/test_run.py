@@ -1,7 +1,11 @@
 import json
+import os
 from unittest import TestCase
 
 from orange_cb_recsys.__main__ import content_config_run, check_for_available, rating_config_run
+
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 content_config_dict = '[{"content_type": "ITEM", ' \
                       '"output_directory": "movielens_test", ' \
@@ -82,14 +86,10 @@ rating_config_dict_2 = {
 
 class TestRun(TestCase):
     def test_config(self):
+        filepath = os.path.join(THIS_DIR, "config.json")
         # test only if the key in the config.json are valid
-        try:
-            with open("test/content_analyzer/config.json") as file:
-                config_list = json.load(file)
-        except FileNotFoundError:
-            with open("config.json") as file:
-                config_list = json.load(file)
-
+        with open(filepath) as file:
+            config_list = json.load(file)
         msg: str = "You have to put the {} in the {}"
         self.assertEqual(type(config_list), type(list()), "the config must contain a list of dict")
         for content_config in config_list:

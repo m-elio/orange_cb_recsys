@@ -23,4 +23,4 @@ def clean_no_unders(text: str):
     Returns:
         string without described symbols
     """
-    return re.sub(r"[^a-zA-Z0-9]+", ' ', text)
+    return re.sub(r"[^a-zA-Z0-9]+", '', text)

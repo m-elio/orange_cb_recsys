@@ -1,8 +1,8 @@
 from unittest import TestCase
 import numpy as np
 
-from orange_cb_recsys.content_analyzer.field_content_production_techniques.embedding_technique.combining_technique import \
-    Centroid, Sum
+from orange_cb_recsys.content_analyzer.field_content_production_techniques.embedding_technique.combining_technique \
+    import Centroid, Sum
 
 
 class TestCentroid(TestCase):

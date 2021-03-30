@@ -21,8 +21,12 @@ graph = NXFullGraph(ratings)
 
 class TestNXPageRank(TestCase):
     def test_predict(self):
-        alg = NXPageRank(graph=graph)
         user_ratings = ratings[ratings['from_id'] == 'A001']
+        alg = NXPageRank()
+        rank = alg.predict(user_ratings, 2)
+        self.assertEqual(rank, {})
+
+        alg = NXPageRank(graph=graph)
         rank = alg.predict(user_ratings, 1)
         logger.info('pg_rk results')
         for r in rank.keys():
