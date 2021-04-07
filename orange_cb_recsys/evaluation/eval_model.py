@@ -107,17 +107,20 @@ class RankingAlgEvalModel(EvalModel):
             logger.info("Computing ranking metrics for user %s", user_id)
             user_ratings = self.config.rating_frame[
                 self.config.rating_frame['from_id'] == user_id]
+            user_ratings = remove_not_existent_items(user_ratings, self.config.items_directory)
 
             try:
                 self.partitioning.dataframe = user_ratings
-            except ValueError:
+            except ValueError as e:
+                logger.warning(e)
+                logger.warning("The user %s doesn't have enough valid ratings. "
+                               "The user will be skipped", user_id)
                 continue
 
             for partition_index in self.partitioning:
                 result_dict = {}
                 train = user_ratings.iloc[partition_index[0]]
                 test = user_ratings.iloc[partition_index[1]]
-                test = remove_not_existent_items(test, self.config.items_directory)
 
                 truth = test.loc[:, 'to_id':'score']
                 truth.columns = ["to_id", "rating"]
@@ -191,10 +194,14 @@ class PredictionAlgEvalModel(EvalModel):
             user_ratings = self.config.rating_frame[
                 self.config.rating_frame['from_id'] == user_id]
             user_ratings = user_ratings.sort_values(['to_id'], ascending=True)
+            user_ratings = remove_not_existent_items(user_ratings, self.config.items_directory)
 
             try:
                 self.partitioning.dataframe = user_ratings
-            except ValueError:
+            except ValueError as e:
+                logger.warning(e)
+                logger.warning("The user %s doesn't have enough valid ratings. "
+                               "The user will be skipped", user_id)
                 continue
 
             for partition_index in self.partitioning:
@@ -202,7 +209,6 @@ class PredictionAlgEvalModel(EvalModel):
                 logger.info("Computing prediction metrics")
                 train = user_ratings.iloc[partition_index[0]]
                 test = user_ratings.iloc[partition_index[1]]
-                test = remove_not_existent_items(test, self.config.items_directory)
 
                 predictions = recsys.fit_eval_predict(user_id, train, test)
                 for metric in self.metrics:
