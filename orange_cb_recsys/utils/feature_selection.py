@@ -97,7 +97,7 @@ class FSPageRank(FeatureSelection):
                     new_graph.add_edge(node, PropertyNode(new_property['label']), weight=new_property['weight'])
 
         # computes PageRank and extracts all properties from it
-        rank = nx.pagerank(new_graph)
+        rank = nx.pagerank(new_graph.to_undirected())
         rank = {node.value: rank[node] for node in rank if isinstance(node, PropertyNode)}
 
         # in case multiple representations are considered, the ranking containing multiple representations
