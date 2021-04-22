@@ -18,10 +18,11 @@ class Test(TestCase):
 
         with self.assertRaises(ValueError):
             add('test2', 'test_cat', 'test_fail')
+        number_of_instances = len(get().keys())
         add('test2', 'test_cat')
-        self.assertEqual(len(get().keys()), 19)
+        self.assertEqual(len(get().keys()), number_of_instances)
         remove('test3')
-        self.assertEqual(len(get().keys()), 19)
+        self.assertEqual(len(get().keys()), number_of_instances)
         remove('test2')
         show(True)
 
