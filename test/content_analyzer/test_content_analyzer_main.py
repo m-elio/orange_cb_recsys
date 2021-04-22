@@ -4,8 +4,7 @@ import lzma
 import pickle
 import numpy as np
 
-from orange_cb_recsys.content_analyzer import ContentAnalyzer, ContentAnalyzerConfig, FieldConfig, \
-    FieldRepresentationPipeline
+from orange_cb_recsys.content_analyzer import ContentAnalyzer, ContentAnalyzerConfig, FieldConfig
 from orange_cb_recsys.content_analyzer.content_representation.content_field import StringField, FeaturesBagField, \
     EmbeddingField
 from orange_cb_recsys.content_analyzer.field_content_production_techniques import EmbeddingTechnique, \
@@ -22,9 +21,7 @@ file_path = os.path.join(THIS_DIR, "../../datasets/movies_info_reduced.json")
 class TestContentsProducer(TestCase):
     def test_create_content(self):
         file_path_content_analyzer = os.path.join(THIS_DIR, "../../test/content_analyzer/movielens_test*")
-        entity_linking_pipeline = FieldRepresentationPipeline(BabelPyEntityLinking())
-        plot_config = FieldConfig(None)
-        plot_config.append_pipeline(entity_linking_pipeline)
+        plot_config = FieldConfig(pipelines_list=BabelPyEntityLinking())
         content_analyzer_config = ContentAnalyzerConfig('ITEM', JSONFile(file_path), ["imdbID"], "movielens_test")
         content_analyzer_config.append_field_config("Plot", plot_config)
         content_analyzer = ContentAnalyzer(content_analyzer_config)
@@ -53,8 +50,7 @@ class TestContentsProducer(TestCase):
         movies_ca_config.append_field_config(
             field_name='Title',
             field_config=FieldConfig(
-                pipelines_list=[FieldRepresentationPipeline(
-                    content_technique=SkLearnTfIdf())]
+                pipelines_list=[SkLearnTfIdf()]
             ))
 
         content_analyzer = ContentAnalyzer(movies_ca_config)
@@ -71,9 +67,7 @@ class TestContentsProducer(TestCase):
         movies_ca_config.append_field_config(
             field_name='Title',
             field_config=FieldConfig(
-                pipelines_list=[FieldRepresentationPipeline(
-                    content_technique=SearchIndexing()
-                )]
+                pipelines_list=[SearchIndexing()]
             )
         )
 
@@ -91,15 +85,12 @@ class TestContentsProducer(TestCase):
         movies_ca_config.append_field_config(
             field_name='Title',
             field_config=FieldConfig(
-                pipelines_list=[
-
-                    FieldRepresentationPipeline(
-                            preprocessor_list=[NLTK(lemmatization=True, stopwords_removal=True)],
-                            content_technique=EmbeddingTechnique(
+                pipelines_list=[EmbeddingTechnique(
                                                 combining_technique=Centroid(),
                                                 embedding_source=GensimDownloader(name='glove-twitter-25'),
-                                                granularity='doc'))
-                ]
+                                                granularity='doc',
+                                                preprocessor_list=[NLTK(lemmatization=True, stopwords_removal=True)])
+                                ]
             ))
 
         content_analyzer = ContentAnalyzer(movies_ca_config)
@@ -119,9 +110,7 @@ class TestContentsProducer(TestCase):
         movies_ca_config.append_field_config(
             field_name='Title',
             field_config=FieldConfig(
-                pipelines_list=[
-                    FieldRepresentationPipeline(content_technique=None),
-                ]
+                pipelines_list=[None]
 
             )
         )
@@ -152,9 +141,7 @@ class TestContentsProducer(TestCase):
         movies_ca_config.append_field_config(
             field_name='Title',
             field_config=FieldConfig(
-                pipelines_list=[
-                    FieldRepresentationPipeline(content_technique=None),
-                ]
+                pipelines_list=[None]
 
             )
         )
@@ -184,9 +171,7 @@ class TestContentsProducer(TestCase):
         movies_ca_config.append_field_config(
             field_name='Title',
             field_config=FieldConfig(
-                pipelines_list=[
-                    FieldRepresentationPipeline(content_technique=None),
-                ]
+                pipelines_list=[None]
 
             )
         )
