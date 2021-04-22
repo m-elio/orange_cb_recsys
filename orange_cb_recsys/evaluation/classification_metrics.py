@@ -118,7 +118,11 @@ class Recall(ClassificationMetric):
         """
         logger.info("Computing recall")
         prediction_labels, truth_labels = super()._get_labels(predictions, truth)
-        return prediction_labels.isin(truth_labels).sum() / len(truth_labels)
+        if len(truth_labels) != 0:
+            r = prediction_labels.isin(truth_labels).sum() / len(truth_labels)
+        else:
+            r = 0.0
+        return r
 
 
 class MRR(ClassificationMetric):
