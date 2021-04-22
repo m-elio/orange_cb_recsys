@@ -82,23 +82,49 @@ class TestNXPageRank(TestCase):
         alg = NXPageRank(graph, item_feature_selection_algorithm=FSPageRank(1))
         rank = alg.predict(user_ratings, 3)
         self.assertEqual(len(rank), 3)
+        print(rank)
 
         # test for prediction with feature selection algorithm for users only
         alg = NXPageRank(graph, user_feature_selection_algorithm=FSPageRank(1))
         rank = alg.predict(user_ratings, 3)
         self.assertEqual(len(rank), 3)
+        print(rank)
 
         # test for prediction with feature selection algorithm for items and users with k set to 0
         alg = NXPageRank(graph, item_feature_selection_algorithm=FSPageRank(0),
                          user_feature_selection_algorithm=FSPageRank(0))
         rank = alg.predict(user_ratings, 3)
         self.assertEqual(len(rank), 3)
+        print(rank)
+
+        # test for prediction while considering only a subset of ratings from the user
+        small_ratings = pd.DataFrame.from_records([("2", "tt0112453", 0.4)], columns=["from_id", "to_id", "score"])
+        alg = NXPageRank(graph, item_feature_selection_algorithm=FSPageRank(1),
+                         user_feature_selection_algorithm=FSPageRank(1))
+        rank = alg.predict(small_ratings, 3)
+        self.assertEqual(len(rank), 3)
+        print(rank)
+
+        # test for prediction while considering only a subset of ratings from the user with an item not present in the
+        # original rating frame
+        wrong_small_ratings = pd.DataFrame.from_records([("2", "tt0112453", 0.4),
+                                                         ("2", "test", 0.3)], columns=["from_id", "to_id", "score"])
+        alg = NXPageRank(graph, item_feature_selection_algorithm=FSPageRank(1),
+                         user_feature_selection_algorithm=FSPageRank(1))
+        rank = alg.predict(wrong_small_ratings, 3)
+        self.assertEqual(len(rank), 0)
+
+        user_ratings = ratings[ratings['from_id'] == '8']
+        # test for prediction with user ratings containing only the most negative vote as possible
+        alg = NXPageRank(graph, item_feature_selection_algorithm=FSPageRank(1),
+                         user_feature_selection_algorithm=FSPageRank(0))
+        rank = alg.predict(user_ratings, 3)
+        self.assertEqual(len(rank), 3)
+        print(rank)
 
 
 class PageRankAlg(TestCase):
     def test_clean_rank(self):
-        user_ratings = ratings[ratings['from_id'] == '1']
-
         rank = {"1": 0.5, "tt0112281": 0.5, "2": 0.5, "tt0113497": 0.5, "tt0112302": 0.5}
         alg = NXPageRank(graph=graph)
 
@@ -106,23 +132,21 @@ class PageRankAlg(TestCase):
         alg.remove_items_in_profile = False
         alg.remove_properties = False
         alg.remove_user_nodes = False
-        result = alg.clean_rank(rank, graph, user_ratings, "1")
+        result = alg.clean_rank(rank, graph, "1")
         self.assertGreaterEqual(len(result.keys()), 0)
 
         # removes user and property nodes and item nodes already in the user profile
         alg.remove_items_in_profile = True
         alg.remove_properties = True
         alg.remove_user_nodes = True
-        result = alg.clean_rank(rank, graph, user_ratings, "1")
+        result = alg.clean_rank(rank, graph, "1")
         expected = {"tt0113497": 0.5}
         self.assertEqual(expected, result)
 
     def test_extract_profile(self):
         alg = NXPageRank(graph=graph)
-        user_ratings = pd.DataFrame().from_records([
-            ("3", "tt0112453", 0.1)], columns=["from_id", "to_id", "score"])
-        result = alg.extract_profile("3", graph, user_ratings)
+        result = alg.extract_profile("3", graph)
 
-        expected = {"tt0112453": 0.55}
+        expected = {"tt0112453": 0.55, "55117": 0.5, "M": 0.5}
 
         self.assertEqual(expected, result)

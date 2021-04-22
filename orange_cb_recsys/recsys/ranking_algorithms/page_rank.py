@@ -21,7 +21,11 @@ class PageRankAlg(RankingAlgorithm):
     personalized
 
     Args:
-        fullgraph (FullGraph): original graph on which the PageRank or Feature Selection algorithms will be applied
+        fullgraph (FullGraph): original graph on which the PageRank or Feature Selection algorithms will be applied.
+            Note that it's useful to define copies of this graph on which apply modifications and not to operate on the
+            original instance itself. This is so because if any iterative external operation has to be done (like
+            using the PageRankAlg's predict method two times in a row with different parameters) the original fullgraph
+            has to be preserved, otherwise each successive operation will be influenced by the previous ones
         remove_user_nodes (bool): If True, removes user nodes from the ranking
         remove_items_in_profile (bool): If True, removes item nodes from the ranking that are also
             in the user profile
@@ -102,7 +106,7 @@ class PageRankAlg(RankingAlgorithm):
         """
         raise NotImplementedError
 
-    def clean_rank(self, rank: Dict, graph: FullGraph, user_ratings: pd.DataFrame, user_id: str = None) -> Dict:
+    def clean_rank(self, rank: Dict, graph: FullGraph, user_id: str = None) -> Dict:
         """
         Cleans a rank from all the nodes that are not requested. It's possible to remove user nodes,
         property nodes and item nodes, the latter if they are already in the user profile. This produces a filtered
@@ -112,15 +116,13 @@ class PageRankAlg(RankingAlgorithm):
         Args:
             rank (dict): dictionary representing the ranking (keys are nodes and values are their ranked score)
             graph (FullGraph): graph from which the user profile will be extracted
-            user_ratings (pd.Dataframe): dataframe containing the ratings of a user, used in the extraction of the
-                user profile
             user_id (str): id of the user used to extract his profile (if None the profile will be empty)
 
         Returns:
             new_rank (dict): dictionary representing the filtered ranking
         """
         if user_id is not None:
-            extracted_profile = self.extract_profile(user_id, graph, user_ratings)
+            extracted_profile = self.extract_profile(user_id, graph)
         else:
             extracted_profile = {}
 
@@ -136,7 +138,7 @@ class PageRankAlg(RankingAlgorithm):
         return new_rank
 
     @staticmethod
-    def extract_profile(user_id: str, graph, user_ratings: pd.DataFrame) -> Dict:
+    def extract_profile(user_id: str, graph: FullGraph) -> Dict:
         """
         Extracts the user profile by accessing the node inside of the graph representing the user.
         Retrieves the item nodes to which the user gave a rating and returns a dictionary containing
@@ -147,11 +149,9 @@ class PageRankAlg(RankingAlgorithm):
             user_id (str): id for the user for which the profile will be extracted
             graph (FullGraph): graph from which the user profile will be extracted. In particular, the weights
                 of the links connecting the user node representing the item and the successors will be
-                extracted and will represent the values in the profile dictionary
-            user_ratings (pd.Dataframe): dataframe containing the ratings for a user, it is used to retrieve
-                the items to which the user gave a rating. These items will be representing the keys in the
-                profile dictionary. It is useful if a subset of the items rated by the user
-                has to be considered rather than all of his rated items
+                extracted and will represent the values in the profile dictionary. A graph is passed instead
+                of using the original graph in the class because the original graph isn't modified, so it isn't
+                affected by modifications done during the prediction process (such as Feature Selection)
 
         Output example: if the user has rated two items ('I1', 'I2'), the user node corresponding to the user_id
         is selected (for example for user 'A') and each link connecting the user to the items is retrieved and the
@@ -163,13 +163,47 @@ class PageRankAlg(RankingAlgorithm):
             profile (dict): dictionary with item successor nodes to the user as keys and weights of the edge
                 connecting them in the graph as values
         """
-        successors = user_ratings['to_id'].values
+        successors = graph.get_successors(user_id)
         profile = {}
         for successor in successors:
             link_data = graph.get_link_data(user_id, successor)
             profile[successor] = link_data['weight']
             logger.info('unpack %s, %s', str(successor), str(profile[successor]))
         return profile  # {t: w for (f, t, w) in adj}
+
+    @staticmethod
+    def remove_links_for_user(graph: FullGraph, nodes_to_remove: set, user_id: str):
+        """
+        Removes the links between the user node which represents the user_id passed as an argument and a subset of its
+        successors defined in the nodes_to_remove argument. After this phase, any node in the graph without any
+        predecessor is removed (meaning both the items and the property nodes that may not have any predecessor after
+        removing one or more item nodes). This is useful in case a prediction considering only a subset of the items
+        an user rated has to be done (in particular this may be the case with Partitioning techniques). If in such cases
+        this phase wasn't done and the additional item nodes were simply masked, the results obtained by the prediction
+        would be biased by the fact that these nodes and links still exist within the graph
+
+        Args:
+            graph (FullGraph): graph on which the links and/or nodes will be removed
+            nodes_to_remove (set): set of successor nodes for a specific user for which the links between the user and
+                each node will be removed
+            user_id (str): string value representing the user_id to consider (used to retrieve the corresponding user
+                node from the graph)
+        """
+
+        to_remove = set()
+        for item_node in graph.get_successors(user_id):
+            if item_node in nodes_to_remove:
+                to_remove.add((user_id, item_node))
+        graph._graph.remove_edges_from(to_remove)
+
+        to_remove = set()
+        for item_node in nodes_to_remove:
+            if len(graph.get_predecessors(item_node)) == 0:
+                to_remove.add(item_node)
+                for property_node in graph.get_successors(item_node):
+                    if len(graph.get_predecessors(property_node)) == 1:
+                        to_remove.add(property_node)
+        graph._graph.remove_nodes_from(to_remove)
 
 
 class NXPageRank(PageRankAlg):
@@ -201,9 +235,10 @@ class NXPageRank(PageRankAlg):
         The first one, in case the ranking is made for a user, will be PageRank with Priors considering the user profile
         as personalization vector. The second one, in case no user is defined (empty ratings or None) will be standard
         PageRank.
-        If feature selection algorithms are used, a copy of the original graph will be instantiated and the process
-        of removing Property nodes will be done on that copy as well as the next operations (so that the original graph
-        may be preserved for future predictions).
+        If only a subset of the user ratings is passed as an argument, the graph will be pruned from the links
+        representing the ratings not considered in said subset.
+        For any case in which the graph will be modified (such as Feature Selection), a copy of the original graph will
+        be created, so that the original graph may be preserved for future operations.
         It's also possible to include a candidate_item_id_list, in order to consider in the ranking only nodes specified
         in that list.
         Exceptions are thrown if raised by the feature selection algorithms or if a recommendations number <= 0
@@ -224,7 +259,7 @@ class NXPageRank(PageRankAlg):
             graph = self.fullgraph
 
             if recs_number <= 0:
-                raise ValueError("You must set a valid number of recommendations (>= 0) in order to compute PageRank")
+                raise ValueError("You must set a valid number of recommendations (> 0) in order to compute PageRank")
 
             if candidate_item_id_list is None:
                 candidate_item_id_list = []
@@ -234,6 +269,31 @@ class NXPageRank(PageRankAlg):
             if len(ratings) != 0:
                 user_id = ratings['from_id'].iloc[0]
                 personalized = True
+
+                # in case only a subset of ratings from the user is passed, first of all it checks that
+                # the ratings in the dataframe are a subset of the ratings in the graph's user profile
+                # this is done to check that there aren't items rated by the user in the dataframe
+                # but not in the graph's user profile
+                user_ratings = set(ratings['to_id'].values)
+                user_graph = set([node for node in graph.get_successors(user_id) if graph.is_item_node(node)])
+
+                if not user_ratings.issubset(user_graph):
+                    raise ValueError("There are ratings in the dataframe not available in the graph for the user")
+
+                # after that it check if the ratings in the dataframe are equal to the ratings in the
+                # graph's user profile. If they are equal no further operation is done, otherwise
+                # the graph is simplified so that only items considered in the dataframe are
+                # represented in the graph
+                if not user_ratings == user_graph:
+
+                    additional_nodes = user_graph.difference(user_ratings)
+                    graph = deepcopy(self.fullgraph)
+
+                    logger.warning("The ratings passed are less than the ratings in the graph's user profile.\n"
+                                   "The graph will be pruned in order to consider only the ratings passed")
+
+                    self.remove_links_for_user(graph, additional_nodes, user_id)
+
             else:
                 personalized = False
                 user_id = None
@@ -270,7 +330,8 @@ class NXPageRank(PageRankAlg):
             if self.__user_feature_selection_algorithm is not None or\
                     self.__item_feature_selection_algorithm is not None:
 
-                graph = deepcopy(self.fullgraph)
+                if graph is self.fullgraph:
+                    graph = deepcopy(self.fullgraph)
 
                 nodes_to_remove = set()
                 for property_node in graph.property_nodes:
@@ -284,9 +345,9 @@ class NXPageRank(PageRankAlg):
 
             # runs the PageRank either the personalized through the user profile or the standard one
             if personalized:
-                profile = self.extract_profile(user_id, graph, ratings)
+                profile = self.extract_profile(user_id, graph)
                 if sum(profile.values()) == 0.0:
-                    logger.warning("Cannot compute personalized PageRank if all the ratings are the minimum "
+                    logger.warning("Cannot compute personalized PageRank if all the weights are the minimum "
                                    "possible value, standard PageRank will be calculated instead")
                     scores = nx.pagerank(graph._graph)
                 else:
@@ -295,7 +356,7 @@ class NXPageRank(PageRankAlg):
                 scores = nx.pagerank(graph._graph)
 
             # cleans the results removing nodes (they can be user nodes, items in the user profile and properties)
-            scores = self.clean_rank(scores, graph, ratings, user_id)
+            scores = self.clean_rank(scores, graph, user_id)
             scores = dict(sorted(scores.items(), key=lambda item: item[1], reverse=True))
             if len(candidate_item_id_list) == 0:
                 ks = list(scores.keys())
