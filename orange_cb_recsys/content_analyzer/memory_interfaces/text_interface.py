@@ -1,5 +1,6 @@
 import shutil
 import os
+from abc import abstractmethod
 
 from whoosh.fields import Schema, TEXT, KEYWORD
 from whoosh.index import create_in, open_dir
@@ -32,6 +33,18 @@ class IndexInterface(TextInterface):
     def __str__(self):
         return "IndexInterface"
 
+    @property
+    def _writer(self):
+        return self.__writer
+
+    @property
+    def _doc(self):
+        return self.__doc
+
+    @property
+    def _schema_defined(self):
+        return self.__schema_defined
+
     def init_writing(self):
         if not os.path.exists(self.directory):
             os.mkdir(self.directory)
@@ -49,30 +62,9 @@ class IndexInterface(TextInterface):
         """
         self.__doc = {}
 
+    @abstractmethod
     def new_field(self, field_name: str, field_data):
-        """
-        Add a new field. If the schema is not yet defined the writer will add the field_name inside the schema
-
-        Args:
-            field_name (str): Name of the new field
-            field_data: Data to put into the field
-        """
-        if not self.__schema_defined:
-            self.__writer.add_field(field_name, KEYWORD(stored=True, vector=Frequency()))
-        self.__doc[field_name] = field_data
-
-    def new_searching_field(self, field_name, field_data):
-        """
-        Add a new searching field. It will be used by the search engine recommender.
-        If the schema is not yet defined the writer will add the field_name inside the schema
-
-        Args:
-            field_name (str): Name of the new field
-            field_data: Data to put into the field
-        """
-        if not self.__schema_defined:
-            self.__writer.add_field(field_name, TEXT(stored=True, analyzer=SimpleAnalyzer()))
-        self.__doc[field_name] = field_data
+        raise NotImplementedError
 
     def serialize_content(self) -> int:
         """
@@ -123,3 +115,34 @@ class IndexInterface(TextInterface):
 
     def delete_index(self):
         shutil.rmtree(self.directory, ignore_errors=True)
+
+
+class SearchIndex(IndexInterface):
+
+    def new_field(self, field_name: str, field_data):
+        """
+        Add a new searching field. It will be used by the search engine recommender.
+        If the schema is not yet defined the writer will add the field_name inside the schema
+
+        Args:
+            field_name (str): Name of the new field
+            field_data: Data to put into the field
+        """
+        if not self._schema_defined:
+            self._writer.add_field(field_name, TEXT(stored=True, analyzer=SimpleAnalyzer()))
+        self._doc[field_name] = field_data
+
+
+class KeywordIndex(IndexInterface):
+
+    def new_field(self, field_name: str, field_data):
+        """
+        Add a new field. If the schema is not yet defined the writer will add the field_name inside the schema
+
+        Args:
+            field_name (str): Name of the new field
+            field_data: Data to put into the field
+        """
+        if not self._schema_defined:
+            self._writer.add_field(field_name, KEYWORD(stored=True, commas=True, vector=Frequency()))
+        self._doc[field_name] = field_data

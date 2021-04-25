@@ -1,26 +1,29 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
+from typing import List, Union
+import time
 
 from orange_cb_recsys.content_analyzer.content_representation.content_field import FeaturesBagField
-from orange_cb_recsys.content_analyzer.field_content_production_techniques.\
-    field_content_production_technique import TfIdfTechnique
-from orange_cb_recsys.content_analyzer.memory_interfaces.text_interface import IndexInterface
+from orange_cb_recsys.content_analyzer.information_processor.information_processor import InformationProcessor
+from orange_cb_recsys.content_analyzer.field_content_production_techniques. \
+    field_content_production_technique import CollectionBasedTechnique
+from orange_cb_recsys.content_analyzer.memory_interfaces.text_interface import KeywordIndex
 from orange_cb_recsys.content_analyzer.raw_information_source import RawInformationSource
 from orange_cb_recsys.utils.check_tokenization import check_tokenized, check_not_tokenized
 from orange_cb_recsys.utils.id_merger import id_merger
 
 
-class SkLearnTfIdf(TfIdfTechnique):
+class SkLearnTfIdf(CollectionBasedTechnique):
     """
     Tf-idf computed using the sklearn library
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
         self.__corpus = []
         self.__tfidf_matrix = None
         self.__feature_names = None
         self.__matching = {}
 
-    def dataset_refactor(self, information_source: RawInformationSource, id_field_names: list):
+    def dataset_refactor(self, information_source: RawInformationSource, id_field_names: List[str], field_name: str):
         """
         Creates a corpus structure, a list of string where each string is a document.
         Then call TfIdfVectorizer this collection, obtaining term-document
@@ -29,15 +32,11 @@ class SkLearnTfIdf(TfIdfTechnique):
         Args:
             information_source (RawInformationSource): Source for the raw data
             id_field_names: names of the fields that compounds the id
+            field_name
         """
 
-        field_name = self.field_need_refactor
-        preprocessor_list = self.processor_list
-
         for raw_content in information_source:
-            processed_field_data = raw_content[field_name]
-            for preprocessor in preprocessor_list:
-                processed_field_data = preprocessor.process(processed_field_data)
+            processed_field_data = self.preprocess_data(raw_content[field_name])
 
             processed_field_data = check_not_tokenized(processed_field_data)
             content_id = id_merger(raw_content, id_field_names)
@@ -51,15 +50,13 @@ class SkLearnTfIdf(TfIdfTechnique):
 
         self.__feature_names = tf_vectorizer.get_feature_names()
 
-    def produce_content(self, field_representation_name: str, content_id: str, field_name: str):
+    def produce_content(self, content_id: str) -> FeaturesBagField:
         """
         Retrieve the tf-idf values, for terms in document that match with content_id,
         from the pre-computed word - document matrix.
 
         Args:
-            field_representation_name (str): Name of the field representation
             content_id (str): Id of the content that contains the terms for which extract the tf-idf
-            field_name (str): Name of the field to consider
 
         Returns:
             (FeaturesBag): <term, tf-idf>
@@ -73,34 +70,40 @@ class SkLearnTfIdf(TfIdfTechnique):
         for word, score in [(self.__feature_names[i], score) for (i, score) in tfidf_scores]:
             features[word] = score
 
-        return FeaturesBagField(field_representation_name, features)
+        return FeaturesBagField(features)
 
     def delete_refactored(self):
         pass
 
+    def __str__(self):
+        return "SkLearnTfIdf"
 
-class WhooshTfIdf(TfIdfTechnique):
+    def __repr__(self):
+        return "SkLearnTfIdf Preprocessor List: " + str(self.preprocessor_list)
+
+
+class WhooshTfIdf(CollectionBasedTechnique):
     """
     Class that produces a Bag of words with tf-idf metric using Whoosh
     """
 
-    def __init__(self):
-        super().__init__()
-        self.__index = IndexInterface('./frequency-index')
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
+        self.__index = None
+        self.__field = None
 
     def __str__(self):
         return "WhooshTfIdf"
 
     def __repr__(self):
-        return "< WhooshTfIdf: " + "index = " + str(self.__index) + ">"
+        return "< WhooshTfIdf: " + "index = " + str(self.__index) + ">" + \
+               "Preprocessor List: " + str(self.preprocessor_list)
 
-    def produce_content(self, field_representation_name: str, content_id: str,
-                        field_name: str) -> FeaturesBagField:
+    def produce_content(self, content_id: str) -> FeaturesBagField:
 
-        return FeaturesBagField(
-            field_representation_name, self.__index.get_tf_idf(field_name, content_id))
+        return FeaturesBagField(self.__index.get_tf_idf(self.__field, content_id))
 
-    def dataset_refactor(self, information_source: RawInformationSource, id_field_names: list):
+    def dataset_refactor(self, information_source: RawInformationSource, id_field_names: List[str], field_name: str):
         """
         Saves the processed data in a index that will be used for frequency calculation
 
@@ -109,21 +112,16 @@ class WhooshTfIdf(TfIdfTechnique):
                 which extract the field data
                 to create the index for tf-idf computing
             id_field_names (list<str>): names of the fields that compound the id
+            field_name
         """
-
-        field_name = self.field_need_refactor
-        preprocessor_list = self.processor_list
-        pipeline_id = self.pipeline_need_refactor
-
-        self.__index = IndexInterface('./' + field_name + pipeline_id)
+        self.__index = KeywordIndex('./' + field_name + str(time.time()))
+        self.__field = field_name
         self.__index.init_writing()
         for raw_content in information_source:
             self.__index.new_content()
             content_id = id_merger(raw_content, id_field_names)
             self.__index.new_field("content_id", content_id)
-            processed_field_data = raw_content[field_name]
-            for preprocessor in preprocessor_list:
-                processed_field_data = preprocessor.process(processed_field_data)
+            processed_field_data = self.preprocess_data(raw_content[field_name])
 
             processed_field_data = check_tokenized(processed_field_data)
             self.__index.new_field(field_name, processed_field_data)

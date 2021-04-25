@@ -1,13 +1,10 @@
-import os
 from abc import ABC, abstractmethod
 from typing import Dict, List
-import pandas as pd
 from SPARQLWrapper import SPARQLWrapper, JSON
 
 from orange_cb_recsys.content_analyzer.content_representation.content import PropertiesDict
-from orange_cb_recsys.content_analyzer.raw_information_source import RawInformationSource
 from orange_cb_recsys.utils.const import logger
-from orange_cb_recsys.utils.string_cleaner import clean_with_unders, clean_no_unders
+from orange_cb_recsys.utils.string_cleaner import clean_with_unders
 
 
 class ExogenousPropertiesRetrieval(ABC):
@@ -66,7 +63,7 @@ class PropertiesFromDataset(ExogenousPropertiesRetrieval):
                 else:
                     break
 
-            if(field_name in raw_content.keys()):
+            if field_name in raw_content.keys():
                 prop_dict[field_name] = str(raw_content[field_name])
             else:
                 prop_dict[field_name] = ''
@@ -76,7 +73,7 @@ class PropertiesFromDataset(ExogenousPropertiesRetrieval):
             elif self.mode == 'all_retrieved' or self.mode == 'all' or self.mode == 'original_retrieved':
                 continue
 
-        return PropertiesDict(name, prop_dict)
+        return PropertiesDict(prop_dict)
 
 
 class DBPediaMappingTechnique(ExogenousPropertiesRetrieval):
@@ -186,16 +183,6 @@ class DBPediaMappingTechnique(ExogenousPropertiesRetrieval):
                                          for value in (raw_content[field_name].split(', '))]) +
                             ")" for property_name, field_name in
                             self.__additional_filters.items()])
-
-        # if len(self.__has_label) != 0:
-        #     query += '. '
-        #
-        # # label retrieval for fields with label
-        # query += '. '.join(
-        #     ["?%s rdfs:label ?%s_label" % (field_name.lower(), field_name.lower())
-        #      for field_name in self.__has_label])
-
-        # lang filter
         query += ". FILTER langMatches(lang(?%s), \"%s\"). " % (self.__label_field.lower(), self.__lang)
 
         # label filter
@@ -332,6 +319,4 @@ class DBPediaMappingTechnique(ExogenousPropertiesRetrieval):
         if self.mode == 'all':
             prop_dict = self.__get_all_properties(raw_content)
 
-        print(prop_dict)
-
-        return PropertiesDict(name, prop_dict)
+        return PropertiesDict(prop_dict)

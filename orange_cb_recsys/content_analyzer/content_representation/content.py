@@ -15,15 +15,9 @@ class ExogenousPropertiesRepresentation(ABC):
     exist according to different techniques
 
     Args:
-        name (str): string identifier of the exogenous
-        properties representation
     """
-    def __init__(self, name: str):
-        self.__name = name
-
-    @property
-    def name(self):
-        return self.__name
+    def __init__(self):
+        pass
 
     @property
     @abstractmethod
@@ -37,13 +31,11 @@ class PropertiesDict(ExogenousPropertiesRepresentation):
     retrieved by DBPediaMappingTechnique
 
     Args:
-        name: string identifier of the exogenous
-            properties representation
         features: properties in the specified format
     """
 
-    def __init__(self, name: str, features: Dict[str, str] = None):
-        super().__init__(name)
+    def __init__(self, features: Dict[str, str] = None):
+        super().__init__()
         if features is None:
             features = {}
 
@@ -52,11 +44,8 @@ class PropertiesDict(ExogenousPropertiesRepresentation):
     @property
     def value(self):
         """
-
         Returns: features dictionary
-
         """
-
         return self.__features
 
 
@@ -83,22 +72,14 @@ class Content:
         if exogenous_rep_dict is None:
             exogenous_rep_dict = {}
 
-        self.__exogenous_rep_dict: Dict[str, ExogenousPropertiesRepresentation] = exogenous_rep_dict
-        self.__index_document_id: int = None
         self.__content_id: str = content_id
+        self.__index_document_id: int = None
         self.__field_dict: Dict[str, ContentField] = field_dict
+        self.__exogenous_rep_dict: Dict[str, ExogenousPropertiesRepresentation] = exogenous_rep_dict
 
     @property
     def content_id(self):
         return self.__content_id
-
-    @property
-    def index_document_id(self) -> int:
-        return self.__index_document_id
-
-    @index_document_id.setter
-    def index_document_id(self, index_document_id: int):
-        self.__index_document_id = index_document_id
 
     @property
     def field_dict(self):
@@ -107,6 +88,14 @@ class Content:
     @property
     def exogenous_rep_dict(self):
         return self.__exogenous_rep_dict
+
+    @property
+    def index_document_id(self) -> int:
+        return self.__index_document_id
+
+    @index_document_id.setter
+    def index_document_id(self, index_document_id: int):
+        self.__index_document_id = index_document_id
 
     def get_field(self, field_name: str):
         return self.__field_dict[field_name]
@@ -146,34 +135,11 @@ class Content:
 
     def __str__(self):
         content_string = "Content: %s" % self.__content_id
-        field_string = '\n'.join(str(field) for field in self.__field_dict.values())
+        field_string = ''
+        for field, rep in self.__field_dict.items():
+            field_string += "\nField: %s %s" % (field, rep)
 
-        return "%s \n\n %s ##############################" % (content_string, field_string)
+        return "%s \n\n %s \n##############################" % (content_string, field_string)
 
     def __eq__(self, other):
         return self.__content_id == other.__content_id and self.__field_dict == other.__field_dict
-
-
-class RepresentedContentsRecap:
-    """
-    Class that collects a string list with id and types for each representation
-    Args:
-        representation_list (list<str>): List of the names of the representations
-    """
-    def __init__(self, representation_list: list = None):
-        if representation_list is None:
-            representation_list = []
-
-        self.__representation_list = representation_list
-
-    def append(self, representation: str):
-        self.__representation_list.append(representation)
-
-    def serialize(self):
-        """
-        Serialize strings
-        """
-        raise NotImplementedError
-
-    def __str__(self):
-        return '\n\n'.join(self.__representation_list)

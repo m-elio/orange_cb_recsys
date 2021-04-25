@@ -1,14 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Union
 
 import nltk
 import numpy as np
 
 from nltk.tokenize import sent_tokenize
-from orange_cb_recsys.content_analyzer.content_representation. \
-    content_field import FieldRepresentation, FeaturesBagField, EmbeddingField
-from orange_cb_recsys.content_analyzer.information_processor. \
-    information_processor import InformationProcessor
+from orange_cb_recsys.content_analyzer.content_representation.content_field import FieldRepresentation, EmbeddingField,\
+    StringField
+from orange_cb_recsys.content_analyzer.information_processor.information_processor import InformationProcessor
 from orange_cb_recsys.content_analyzer.memory_interfaces.text_interface import IndexInterface
 from orange_cb_recsys.content_analyzer.raw_information_source import RawInformationSource
 from orange_cb_recsys.utils.check_tokenization import check_tokenized, check_not_tokenized
@@ -19,39 +18,99 @@ class FieldContentProductionTechnique(ABC):
     Abstract class that generalizes the techniques to use for producing the semantic description
     of a content's field's representation
     """
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        if preprocessor_list is None:
+            preprocessor_list = []
+        self.__preprocessor_list = preprocessor_list
 
-    def __init__(self):
+        if not isinstance(self.__preprocessor_list, list):
+            self.__preprocessor_list = [self.__preprocessor_list]
+
         self.__lang = "EN"
 
     @property
     def lang(self):
         return self.__lang
 
+    @property
+    def preprocessor_list(self):
+        return self.__preprocessor_list
+
     @lang.setter
     def lang(self, lang: str):
         self.__lang = lang
+        for preprocessor in self.__preprocessor_list:
+            preprocessor.lang = self.__lang
+
+    @preprocessor_list.setter
+    def preprocessor_list(self, preprocessor_list):
+        self.__preprocessor_list = preprocessor_list
+
+    def preprocess_data(self, field_data):
+        processed_field_data = field_data
+        for preprocessor in self.__preprocessor_list:
+            processed_field_data = preprocessor.process(processed_field_data)
+
+        return processed_field_data
+
+    @abstractmethod
+    def produce_content(self, field_data):
+        raise NotImplementedError
 
 
 class SearchIndexing(FieldContentProductionTechnique):
-    def produce_content(self, field_name: str, pipeline_id, field_data, indexer: IndexInterface):
+    """
+    Technique used to saved the processed data into a Search Index that can be used for other operations (an example
+    would be submitting a query to said index)
+    """
+
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
+        self.__index = None             # index to write on
+        self.__field_name = None        # filed name to write on
+        self.__pipeline_id = None       # pipeline id for passing field_name + pipeline_id in the index
+
+    @property
+    def index(self):
+        return self.__index
+
+    @index.setter
+    def index(self, index: IndexInterface):
+        self.__index = index
+
+    @property
+    def field_name(self):
+        return self.__field_name
+
+    @field_name.setter
+    def field_name(self, field_name):
+        self.__field_name = field_name
+
+    @property
+    def pipeline_id(self):
+        return self.__pipeline_id
+
+    @pipeline_id.setter
+    def pipeline_id(self, pipeline_id):
+        self.__pipeline_id = pipeline_id
+
+    def produce_content(self, field_data):
         """
         Save field data as a document field using the given indexer,
         the resulting can be used for an index query recommender
 
         Args:
-            indexer: Index in which new field will be created
             field_data: Data that will be stored in the index
-            pipeline_id: Second part of the field name in the indexer index,
-                complete field_name is field_name + pipeline_id
-            field_name (str): First part of the field name in the indexer index,
-                complete field_name is field_name + pipeline_id
 
         """
-        field_data = check_not_tokenized(field_data)
-        indexer.new_searching_field(field_name + pipeline_id, field_data)
+        field_data = check_not_tokenized(self.preprocess_data(field_data))
+        self.__index.new_field(self.__field_name + self.__pipeline_id, field_data)
 
     def __str__(self):
         return "Indexing for search-engine recommender"
+
+    def __repr__(self):
+        return "Indexing for search-engine recommender Preprocessor list:" + str(self.preprocessor_list)
 
 
 class CollectionBasedTechnique(FieldContentProductionTechnique):
@@ -60,43 +119,15 @@ class CollectionBasedTechnique(FieldContentProductionTechnique):
     such as the tf-idf technique
     """
 
-    def __init__(self):
-        super().__init__()
-        self.__field_need_refactor: str = None
-        self.__pipeline_need_refactor: str = None
-        self.__processor_list: List[InformationProcessor] = None
-
-    @property
-    def field_need_refactor(self) -> str:
-        return self.__field_need_refactor
-
-    @property
-    def pipeline_need_refactor(self) -> str:
-        return self.__pipeline_need_refactor
-
-    @property
-    def processor_list(self) -> List[InformationProcessor]:
-        return self.__processor_list
-
-    @field_need_refactor.setter
-    def field_need_refactor(self, field_name: str):
-        self.__field_need_refactor = field_name
-
-    @pipeline_need_refactor.setter
-    def pipeline_need_refactor(self, pipeline_id: str):
-        self.__pipeline_need_refactor = pipeline_id
-
-    @processor_list.setter
-    def processor_list(self, processor_list: List[InformationProcessor]):
-        self.__processor_list = processor_list
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
 
     @abstractmethod
-    def produce_content(self, field_representation_name: str, content_id: str,
-                        field_name: str) -> FieldRepresentation:
+    def produce_content(self, content_id: str) -> FieldRepresentation:
         raise NotImplementedError
 
     @abstractmethod
-    def dataset_refactor(self, information_source: RawInformationSource, id_field_names):
+    def dataset_refactor(self, information_source: RawInformationSource, id_field_names: List[str], field_name: str):
         """
         This method restructures the raw data in a way functional to the final representation.
         This is done only for those field representations that require this phase to be done
@@ -104,6 +135,7 @@ class CollectionBasedTechnique(FieldContentProductionTechnique):
         Args:
             information_source (RawInformationSource):
             id_field_names: fields where to find data that compound content's id
+            field_name
         """
         raise NotImplementedError
 
@@ -111,21 +143,18 @@ class CollectionBasedTechnique(FieldContentProductionTechnique):
     def delete_refactored(self):
         raise NotImplementedError
 
-    def __str__(self):
-        return "CollectionBasedTechnique"
-
-    def __repr__(self):
-        return "CollectionBasedTechnique "
-
 
 class SingleContentTechnique(FieldContentProductionTechnique):
+
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
+
     @abstractmethod
-    def produce_content(self, field_representation_name: str, field_data) -> FieldRepresentation:
+    def produce_content(self, field_data) -> FieldRepresentation:
         """
         Given data of certain field it returns a complex representation's instance of the field.
 
         Args:
-            field_representation_name: name of the field representation object that will be created
             field_data: input for the complex representation production
 
         Returns:
@@ -135,43 +164,23 @@ class SingleContentTechnique(FieldContentProductionTechnique):
         raise NotImplementedError
 
 
-class TfIdfTechnique(CollectionBasedTechnique):
+class GenericTechnique(FieldContentProductionTechnique):
     """
-    Class that produce a Bag of words with tf-idf metric
+    Simple technique which stores the data without applying any complex operation. If a preprocessor list is
+    defined it will process the data before returning it in a String Field
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
 
-    @abstractmethod
-    def produce_content(self, field_representation_name: str, content_id: str,
-                        field_name: str) -> FeaturesBagField:
-        raise NotImplementedError
-
-    @abstractmethod
-    def dataset_refactor(self, information_source: RawInformationSource, id_field_names: str):
-        raise NotImplementedError
-
-    @abstractmethod
-    def delete_refactored(self):
-        raise NotImplementedError
+    def produce_content(self, field_data) -> StringField:
+        return StringField(self.preprocess_data(field_data))
 
     def __str__(self):
-        return "TfIdfTechnique"
+        return "Basic technique for text"
 
     def __repr__(self):
-        return "TfIdfTechnique "
-
-
-class EntityLinking(SingleContentTechnique):
-    """
-    Abstract class that generalizes implementations that use entity linking
-    for producing the semantic description
-    """
-
-    @abstractmethod
-    def produce_content(self, field_representation_name: str, field_data) -> FeaturesBagField:
-        raise NotImplementedError
+        return "Basic technique for text Preprocessor list:" + str(self.preprocessor_list)
 
 
 class CombiningTechnique(ABC):
@@ -267,39 +276,37 @@ class EmbeddingTechnique(SingleContentTechnique):
         the framework user wants to combine relatively to words, phrases or documents.
     """
 
-    def __init__(self, combining_technique: CombiningTechnique,
-                 embedding_source: EmbeddingSource,
-                 granularity: str):
-        super().__init__()
+    def __init__(self, combining_technique: CombiningTechnique, embedding_source: EmbeddingSource, granularity: str,
+                 preprocessor_list: Union[InformationProcessor, List[InformationProcessor]] = None):
+        super().__init__(preprocessor_list)
         self.__combining_technique: CombiningTechnique = combining_technique
         self.__embedding_source: EmbeddingSource = embedding_source
 
         self.__granularity: str = granularity.lower()
 
-    def produce_content(self, field_representation_name: str, field_data) -> EmbeddingField:
+    def produce_content(self, field_data) -> EmbeddingField:
         """
         Method that builds the semantic content starting from the embeddings contained in
         field_data.
 
         Args:
-            field_representation_name (str): Name of the field representation for which produce
-            the content
             field_data: The terms whose embeddings will be combined.
 
         Returns:
             EmbeddingField
         """
+        preprocessed_field_data = self.preprocess_data(field_data)
 
         if self.__granularity == "word":
-            doc_matrix = self.__embedding_source.load(field_data)
-            return EmbeddingField(field_representation_name, doc_matrix)
+            doc_matrix = self.__embedding_source.load(preprocessed_field_data)
+            return EmbeddingField(doc_matrix)
         if self.__granularity == "sentence":
             try:
                 nltk.data.find('punkt')
             except LookupError:
                 nltk.download('punkt')
 
-            sentences = sent_tokenize(field_data)
+            sentences = sent_tokenize(preprocessed_field_data)
             for i, sentence in enumerate(sentences):
                 sentences[i] = sentence[:len(sentence) - 1]
 
@@ -309,11 +316,10 @@ class EmbeddingTechnique(SingleContentTechnique):
                 sentence_matrix = self.__embedding_source.load(sentence)
                 sentences_embeddings[i, :] = self.__combining_technique.combine(sentence_matrix)
 
-            return EmbeddingField(field_representation_name, sentences_embeddings)
+            return EmbeddingField(sentences_embeddings)
         if self.__granularity == "doc":
-            doc_matrix = self.__embedding_source.load(field_data)
-            return EmbeddingField(
-                field_representation_name, self.__combining_technique.combine(doc_matrix))
+            doc_matrix = self.__embedding_source.load(preprocessed_field_data)
+            return EmbeddingField(self.__combining_technique.combine(doc_matrix))
         else:
             raise ValueError("Must specify a valid embedding technique granularity")
 
@@ -324,4 +330,4 @@ class EmbeddingTechnique(SingleContentTechnique):
         return "EmbeddingTechnique " \
                + str(self.__combining_technique) + " " + \
                str(self.__embedding_source) + " " \
-               + str(self.__granularity)
+               + str(self.__granularity) + "Preprocessor List: " + str(self.preprocessor_list)

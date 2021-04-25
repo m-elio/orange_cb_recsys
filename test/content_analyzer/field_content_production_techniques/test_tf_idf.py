@@ -12,12 +12,9 @@ file_path = os.path.join(THIS_DIR, "../../../datasets/movies_info_reduced.json")
 class TestWhooshTfIdf(TestCase):
     def test_produce_content(self):
         try:
-            technique = WhooshTfIdf()
-            technique.field_need_refactor = "Plot"
-            technique.pipeline_need_refactor = str(1)
-            technique.processor_list = [NLTK()]
-            technique.dataset_refactor(JSONFile(file_path), ["imdbID"])
-            features_bag_test = technique.produce_content("test", "tt0113497", "Plot")
+            technique = WhooshTfIdf([NLTK()])
+            technique.dataset_refactor(JSONFile(file_path), ["imdbID"], "Plot")
+            features_bag_test = technique.produce_content("tt0113497")
             features = features_bag_test.value
 
             self.assertEqual(features['years'], 0.6989700043360189)
@@ -27,12 +24,9 @@ class TestWhooshTfIdf(TestCase):
 
 class TestSkLearnTfIDF(TestCase):
     def test_produce_content(self):
-        technique = SkLearnTfIdf()
-        technique.field_need_refactor = "Plot"
-        technique.pipeline_need_refactor = str(1)
-        technique.processor_list = [NLTK()]
-        technique.dataset_refactor(JSONFile(file_path), ["imdbID"])
-        features_bag_test = technique.produce_content("test", "tt0113497", "Plot")
+        technique = SkLearnTfIdf([NLTK()])
+        technique.dataset_refactor(JSONFile(file_path), ["imdbID"], "Plot")
+        features_bag_test = technique.produce_content("tt0113497")
         features = features_bag_test.value
 
         self.assertLess(features['the'], 0.15)

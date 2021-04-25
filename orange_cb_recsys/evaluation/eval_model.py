@@ -32,6 +32,9 @@ class EvalModel:
         self.__config: RecSysConfig = config
         self.__partitioning = partitioning
 
+        if not isinstance(self.__metric_list, list):
+            self.__metric_list = [self.__metric_list]
+
     @property
     def partitioning(self):
         return self.__partitioning
@@ -133,8 +136,9 @@ class RankingAlgEvalModel(EvalModel):
                 ranking_alg_metrics_results = \
                     ranking_alg_metrics_results.append(result_dict, ignore_index=True)
 
-        ranking_alg_metrics_results = \
-            ranking_alg_metrics_results.groupby('from').mean().reset_index()
+        if len(ranking_alg_metrics_results) != 0:
+            ranking_alg_metrics_results = \
+                ranking_alg_metrics_results.groupby('from').mean().reset_index()
 
         return ranking_alg_metrics_results
 
@@ -216,7 +220,8 @@ class PredictionAlgEvalModel(EvalModel):
 
                 prediction_metric_results.append(result_dict, ignore_index=True)
 
-        prediction_metric_results = prediction_metric_results.groupby('from').mean().reset_index()
+        if len(prediction_metric_results) != 0:
+            prediction_metric_results = prediction_metric_results.groupby('from').mean().reset_index()
 
         return prediction_metric_results
 

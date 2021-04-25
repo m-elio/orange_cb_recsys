@@ -9,16 +9,19 @@ from orange_cb_recsys.content_analyzer.field_content_production_techniques.embed
     GensimDownloader
 from orange_cb_recsys.content_analyzer.field_content_production_techniques.field_content_production_technique import \
     EmbeddingTechnique, SearchIndexing
-from orange_cb_recsys.content_analyzer.memory_interfaces.text_interface import IndexInterface
+from orange_cb_recsys.content_analyzer.memory_interfaces.text_interface import SearchIndex
 
 
 class TestSearchIndexing(TestCase):
     def test_produce_content(self):
         technique = SearchIndexing()
-        index = IndexInterface('./search-index')
+        index = SearchIndex('./search-index')
         index.init_writing()
         index.new_content()
-        technique.produce_content('Plot', '0', 'this is a test for the search index', index)
+        technique.index = index
+        technique.field_name = "Plot"
+        technique.pipeline_id = "0"
+        technique.produce_content('this is a test for the search index')
         index.serialize_content()
         index.stop_writing()
         ix = open_dir('./search-index')
@@ -33,7 +36,7 @@ class TestEmbeddingTechnique(TestCase):
     def test_produce_content(self):
         technique = EmbeddingTechnique(Centroid(), GensimDownloader('glove-twitter-25'), granularity="doc")
 
-        result = technique.produce_content("Embedding", "title plot")
+        result = technique.produce_content("title plot")
         expected = np.ndarray(shape=(25,))
         expected[:] = [7.88080007e-01, 2.99764998e-01, 4.93862494e-02, -2.96350002e-01,
                        3.28214996e-01, -8.11504990e-01, 1.06998003e+00, -2.28915006e-01,
@@ -47,7 +50,7 @@ class TestEmbeddingTechnique(TestCase):
 
         technique = EmbeddingTechnique(Centroid(), GensimDownloader('glove-twitter-25'), granularity="word")
 
-        result = technique.produce_content("Embedding", "title plot")
+        result = technique.produce_content("title plot")
 
         expected = np.ndarray(shape=(2, 25))
         expected[0, :] = np.array([8.50130022e-01, 4.52620000e-01, -7.05750007e-03, -8.77380013e-01,
@@ -70,7 +73,7 @@ class TestEmbeddingTechnique(TestCase):
 
         technique = EmbeddingTechnique(Centroid(), GensimDownloader('glove-twitter-25'), granularity="sentence")
 
-        result = technique.produce_content("Embedding", "god is great! i won lottery.")
+        result = technique.produce_content("god is great! i won lottery.")
         expected = np.ndarray(shape=(2, 25))
 
         expected[0, :] = [-3.76183331e-01, 1.54346665e-01, -2.88810000e-01, -7.58733253e-02,
