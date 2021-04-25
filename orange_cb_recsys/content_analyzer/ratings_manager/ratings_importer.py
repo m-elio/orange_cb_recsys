@@ -63,6 +63,14 @@ class RatingsImporter:
         self.__timestamp_field_name: str = timestamp_field_name
         self.__score_combiner = ScoreCombiner(score_combiner)
 
+        if not isinstance(self.__rating_configs, list):
+            self.__rating_configs = [self.__rating_configs]
+
+        # this is done so that the user doesn't have to define a RatingsFieldConfig default class when defining the
+        # list (this is also useful in the script handling)
+        self.__rating_configs = [RatingsFieldConfig(**field_config) if isinstance(field_config, dict) else
+                                 field_config for field_config in self.__rating_configs]
+
         self.__columns: list = ["from_id", "to_id", "score", "timestamp"]
         for field in self.__rating_configs:
             self.__columns.append(field.field_name)

@@ -121,6 +121,12 @@ class ContentAnalyzerConfig:
         self.__id_field_name_list: List[str] = id_field_name_list
         self.__exogenous_properties_retrieval: List[ExogenousPropertiesRetrieval] = exogenous_properties_retrieval
 
+        # this is done so that the user doesn't have to define a FieldConfig default class when defining the
+        # dictionary (this is also useful in the script handling)
+        for field_name, config in self.__field_config_dict.items():
+            if isinstance(config, dict):
+                self.__field_config_dict[field_name] = FieldConfig(**config)
+
         if not isinstance(self.__exogenous_properties_retrieval, list):
             self.__exogenous_properties_retrieval = [self.__exogenous_properties_retrieval]
 

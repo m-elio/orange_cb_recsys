@@ -1,22 +1,18 @@
 from typing import Dict, Union
 import orange_cb_recsys.utils.runnable_instances as r_i
 
-import os
 import json
 import sys
 import yaml
-import inspect
 import pandas as pd
+from inspect import signature, isclass
 
-from orange_cb_recsys.content_analyzer.config import ContentAnalyzerConfig, FieldConfig
+from orange_cb_recsys.content_analyzer.config import ContentAnalyzerConfig
 from orange_cb_recsys.content_analyzer.content_analyzer_main import ContentAnalyzer
-from orange_cb_recsys.content_analyzer.embedding_learner import EmbeddingLearner
-from orange_cb_recsys.content_analyzer.ratings_manager.ratings_importer import \
-    RatingsImporter, RatingsFieldConfig
+from orange_cb_recsys.content_analyzer.ratings_manager.ratings_importer import RatingsImporter
 from orange_cb_recsys.recsys import RecSysConfig, RecSys
-from orange_cb_recsys.utils.const import logger
 
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "content_analyzer/config.json")
+DEFAULT_CONFIG_PATH = "web_GUI/app/configuration_files/config.json"
 
 """
 All the available implementations are extracted
@@ -27,500 +23,303 @@ runnable_instances = r_i.get()
 
 def __dict_detector(technique: Union[dict, list]):
     """
-    Detects a class constructor inside of a dictionary and replaces the parameters with the actual object.
-    A class constructor is identified by a 'class' parameter inside of a dictionary.
-
-    This method is also useful in case there are class constructors inside another class constructor
-
+    Detects a class constructor (defined by a dictionary with a class parameter that stores the alias for the class)
+    and replaces it with the object instance.
     {"class": 'test_class'} will be transformed into TestClass()
-
     where TestClass is the class associated to the alias 'test_class' in the runnable_instances file
 
-    If a list of objects is specified such as:
+    This method is also useful in case there are class constructors inside another class constructor
+    {"class": 'test_class', "parameter": {"class": 'test_class'}} will be transformed into
+    TestClass(parameter=TestClass())
 
-    [{"class": 'class1'}, {"class": 'class2'}]
-
+    If a list of objects is specified such as: [{"class": 'class1'}, {"class": 'class2'}]
     this method will call itself recursively so that each dictionary will be transformed into the corresponding object
 
-    If the technique doesn't match any of these cases, for example:
+    If the technique is a standard dictionary (and not one representing an object instance),
+    for example: {"parameter": "value", "parameter2": "value2"}, the values will be checked in order to transform
+    any possible object representation
+    So for example, {"parameter": {"class": 'test_class'}} will be transformed into {"parameter": TestClass()}
 
-    {"parameter": "value", "parameter2": "value2"}
-
-    It's nor a list nor a dictionary representing a class constructor, nothing will be done and it will be returned as
-    it is
+    If the technique doesn't match any of these cases, no operation is done and it is returned as it is
 
     Args:
-        technique: dictionary or list to check in order to transform any class constructors into actual objects
+        technique (Union[list,dict]): dictionary or list to check in order to transform any class constructors into
+            actual objects
+    Returns:
+        technique: processed and transformed dictionary or list of dictionaries or object instance
     """
     if isinstance(technique, list):
         techniques = []
+        # each element in the list will be processed so that any dictionary in the list (or in lists inside of the
+        # first list) will be processed and transformed if it represents an object instance
         for element in technique:
             techniques.append(__dict_detector(element))
         return techniques
-    elif isinstance(technique, dict) and 'class' in technique.keys():
-        parameter_class_name = technique.pop('class')
-        try:
-            return runnable_instances[parameter_class_name](**technique)
-        except TypeError:
-            passed_parameters = list(technique.keys())
-            actual_parameters = list(inspect.signature(
-                runnable_instances[parameter_class_name].__init__).parameters.keys())
-            actual_parameters.remove("self")
-            raise TypeError("The following parameters: " + str(passed_parameters) + "\n" +
-                            "Don't match the class' constructor parameters: " + str(actual_parameters))
+    elif isinstance(technique, dict):
+        # if a parameter class is defined it means that the dictionary represents an object instance
+        if 'class' in technique.keys():
+            parameter_class_name = technique.pop('class')
+            try:
+                # checks if any value is a dictionary representing an object
+                for parameter in technique.keys():
+                    technique[parameter] = __dict_detector(technique[parameter])
+                return runnable_instances[parameter_class_name.lower()](**technique)
+            except TypeError:
+                passed_parameters = list(technique.keys())
+                actual_parameters = list(signature(
+                    runnable_instances[parameter_class_name.lower()].__init__).parameters.keys())
+                actual_parameters.remove("self")
+                raise TypeError("The following parameters: " + str(passed_parameters) + "\n" +
+                                "Don't match the class constructor parameters: " + str(actual_parameters))
+        # otherwise it's just a standard dictionary and every value is checked (in case one of them is a dictionary
+        # representing an object)
+        else:
+            for parameter in technique.keys():
+                technique[parameter] = __dict_detector(technique[parameter])
+            return technique
     else:
         return technique
 
 
-def __object_extractor(object_dict: Dict, parameter: str):
+def __extract_parameters(config_dict: Dict, class_instance) -> dict:
     """
-    In case an object is specified in the config file, this method extracts the class name and the class parameters
-    and instantiates the object itself. The class name has to be specified in the config file by a 'class' parameter,
-    the object parameters are defined with the same names as the actual parameters.
-
-    If the 'class' parameter is not specified or the class name is not a valid implementation a KeyError exception is
-    thrown. A TypeError exception is thrown if the parameters specified for the object don't match the actual parameters
+    Used to extract the parameters for the main modules of the framework or their most important methods.
+    In order to instantiate a content_analyzer (for example), the content_analyzer_config has to be created first.
+    To do so, this method checks every line of the dictionary containing the parameters for the content_analyzer_config
+    and runs different operations according to the value for the parameter.
+    If the value is a dictionary or a list it is passed to the dict_detector, in any other cases the value is simply
+    kept as it is.
+    If during the checking operation it finds any parameter that doesn't match the class or method signature, it
+    raises a ValueError exception.
 
     EXAMPLE:
+        {"parameter_list_value": ["value1", "value2"], "parameter_dict_value": {"class": "class_alias_value"},
+        "parameter_str_value": "VALUE_str", "parameter_int_value": int_value}
 
-        in the configuration file there is:
+        for parameter_list_value and parameter_dict_value the framework will pass their values to the
+        dict_detector method. For explanation on how it works check its relative documentation.
+        To sum it up, it replaces the dictionaries representing an object with the actual object instance.
+        So for example, in this case, parameter_list_value wouldn't be subject to any modification, instead
+        the dictionary in parameter_dict_value will be transformed into the object matching the
+        alias name (this is so because there is a class parameter).
 
-            "preprocessing_list": {"class": "nltk", "lemmatization": True}
+        for parameter_str_value and parameter_int_value no modifications are done.
 
-        In order to instantiate the object for the parameter preprocessing_list the dictionary is extracted, in this
-        instance in particular, this function's parameters will be
+        the final output will be:
 
-        object_dict: {"class": "nltk", "lemmatization": True}
-        parameter: "preprocessing_list"
-
-        The "class" parameter is extracted from the object_dict, and the class, corresponding to the 'nltk'
-        alias, is retrieved (using the runnable_instances). The remaining items in the dictionary are used as
-        the object's constructor parameters and the object is instantiated and returned. In case objects are defined
-        inside of the object_dict the dict_detector method replaces them with the actual object instance
-
-        {"class": "nltk", "lemmatization": True} will be transformed into NLTK(lemmatization=True) and returned
+        {"parameter_list_value": ["value1", "value2"], "parameter_dict_value": Class_from_alias(),
+        "parameter_str_value": "VALUE_str", "parameter_int_value": int_value
 
     Args:
-        object_dict (dict): dictionary containing the class name and the object parameters
-        parameter (str): parameter name in the config file for which the object is being created
+        config_dict (dict): dictionary representing the parameters for a method or class constructor
+        class_instance: the class or method to refer to when retrieving the parameters
 
     Returns:
-        extracted_object: instance of the actual object created from the object_dict
+        parameters (dict): dictionary with the modified parameters
     """
     try:
-        class_name = object_dict.pop('class').lower()
-    except KeyError:
-        raise KeyError("You must specify an object using the class parameter for '%s'" % parameter)
-    try:
-        for key in object_dict.keys():
-            object_dict[key] = __dict_detector(object_dict[key])
-    except TypeError as type_error:
-        raise type_error
-    try:
-        extracted_object = runnable_instances[class_name](**object_dict)
-    except (KeyError, ValueError):
-        raise ValueError("%s is not an existing implementaton" % class_name)
-    except TypeError:
-        passed_parameters = list(object_dict.keys())
-        actual_parameters = list(inspect.signature(runnable_instances[class_name].__init__).parameters.keys())
-        actual_parameters.remove("self")
-        raise TypeError("The following parameters: " + str(passed_parameters) + "\n" +
-                        "Don't match the class' constructor parameters: " + str(actual_parameters))
-    return extracted_object
+        # if the method receives a class it will extract the parameters from the constructor, otherwise
+        # it will just extract the parameters directly (this happens, for example, if the passed argument is a method)
+        if isclass(class_instance):
+            signature_parameters = list(signature(class_instance.__init__).parameters.keys())
+        else:
+            signature_parameters = list(signature(class_instance).parameters.keys())
+        if "self" in signature_parameters:
+            signature_parameters.remove("self")
 
+        # checks if the signature of the method or class is able to take any number of parameters
+        # the next operation done by the method will use this information and won't check for
+        # matches between the parameters passed by the user (in the dictionary) and the signature parameters
+        any_parameters = False
+        if "**kwargs" in signature_parameters or "**args" in signature_parameters:
+            any_parameters = True
 
-def __complete_path(directory: str) -> str:
-    """
-    Used to find a complete directory from the one passed as an argument with the last file's complete name. If there
-    are multiple files with the same name, the last created file will be extracted. This is particularly useful in this
-    project since the files created by the Content Analyzer are named after the time at which they were created
-    (using time.time). Without this it would be impossible to run a Recsys and a Content Analyzer in the same config
-    file, because the user wouldn't be able to define the directory name where users, items or ratings are stored.
+        # the method checks every key of the dictionary in order to modify the value (in case it is a dictionary
+        # representing an object or a string to be lowered) and makes sure that all the keys are in the
+        # previously extracted parameters
+        parameters = dict()
+        for config_line in config_dict.keys():
+            if not any_parameters and config_line not in signature_parameters:
+                raise ValueError("%s is not a parameter for %s"
+                                 "\nThe actual parameters are: " %
+                                 (config_line, class_instance) + str(signature_parameters))
+            else:
+                if isinstance(config_dict[config_line], dict) or isinstance(config_dict[config_line], list):
+                    parameters[config_line] = __dict_detector(config_dict[config_line])
+                else:
+                    parameters[config_line] = config_dict[config_line]
 
-    If no file is found, a ValueError exception is thrown.
-
-    EXAMPLE:
-
-        directory passed as argument: '../file_to_find'
-        actual existing directory: '../file_to_find1.something'
-
-        the output of the function will be: '../file_to_find1.something'
-
-        if two directories exist such as '../file_to_find1.something' and '../file_to_find2.something',
-        the last created file between 'file_to_find1' and 'file_to_find2' will be extracted
-
-    Args:
-        directory (str): directory where the file is stored. The last part of the directory is the partial name , or
-            the complete one even, of the file to find
-
-    Returns (str):
-        file_directory: complete directory
-
-    """
-    base_dir = os.path.dirname(os.path.abspath(directory))
-    file_name = os.path.basename(os.path.normpath(directory))
-    files = [os.path.join(base_dir, name) for name in os.listdir(base_dir)]
-    files.sort(key=os.path.getctime)
-    files.reverse()
-    for file_directory in files:
-        name = os.path.basename(os.path.normpath(file_directory))
-        if file_name in str(name):
-            return file_directory
-    raise FileNotFoundError("File not found for path: %s" % directory)
+        return parameters
+    except (KeyError, ValueError, TypeError) as e:
+        raise e
 
 
 def __content_config_run(content_config: Dict):
     """
-    Method that extracts the parameters for the creation and fitting of a Content Analyzer. It checks the dictionary
-    for the various keys representing the parameters of the Content Analyzer and extracts their values
+    Method that extracts the parameters for the creation and fitting of a Content Analyzer
 
     Args:
         content_config (dict): dictionary that represents a config defined in the config file, in this case it
-            represents the config of the content analyzer
+            represents the config of the Content Analyzer
     """
     try:
-        # if one or more lines in the content config dictionary aren't recognised as actual parameters a warning is
-        # given to the user
-        for config_line in content_config.keys():
-            if config_line not in ['content_type', 'source_type', 'raw_source_path', 'id_field_name',
-                                   'output_directory', 'get_lod_properties', 'fields']:
-
-                logger.warning("%s is not a parameter for content analyzer, therefore it will be skipped" % config_line)
-
-        # if any of the parameters that must be defined are not defined, a KeyError exception is thrown showing
-        # the missing parameters
-        unspecified_parameters = []
-        if 'content_type' not in content_config.keys():
-            unspecified_parameters.append('content_type')
-        if 'source_type' not in content_config.keys():
-            unspecified_parameters.append('source_type')
-        if 'raw_source_path' not in content_config.keys():
-            unspecified_parameters.append('raw_source_path')
-        if 'id_field_name' not in content_config.keys():
-            unspecified_parameters.append('id_field_name')
-        if 'output_directory' not in content_config.keys():
-            unspecified_parameters.append('output_directory')
-
-        if len(unspecified_parameters) != 0:
-            raise KeyError("The following obligatory parameters for Content Analyzer were not specified: " +
-                           str(unspecified_parameters))
-
-        # could be 'item' or 'user' and so on
-        source_type = content_config['source_type'].lower()
-
-        content_analyzer_config = ContentAnalyzerConfig(
-            content_config["content_type"],
-            runnable_instances[source_type]
-            (file_path=content_config["raw_source_path"]),
-            content_config['id_field_name'],
-            content_config['output_directory'])
-
-        if 'get_lod_properties' in content_config.keys():
-            if not isinstance(content_config['get_lod_properties'], list):
-                content_config['get_lod_properties'] = [content_config['get_lod_properties']]
-            for ex_retrieval in content_config['get_lod_properties']:
-                content_analyzer_config.append_exogenous_properties_retrieval(__object_extractor(
-                    ex_retrieval, 'get_lod_properties'))
-
-        if 'fields' in content_config.keys():
-            if not isinstance(content_config['fields'], list):
-                content_config['fields'] = [content_config['fields']]
-
-            for field_dict in content_config['fields']:
-                if 'lang' in field_dict.keys():
-                    field_config = FieldConfig(field_dict['lang'])
-                else:
-                    field_config = FieldConfig()
-
-                # setting the content analyzer config
-
-                if 'pipeline_list' in field_dict.keys():
-                    if not isinstance(field_dict['pipeline_list'], list):
-                        field_dict['pipeline_list'] = [field_dict['pipeline_list']]
-
-                    for pipeline_dict in field_dict['pipeline_list']:
-                        # content production settings
-                        if isinstance(pipeline_dict, dict):
-                            field_config.append_pipeline(__object_extractor(pipeline_dict, 'pipeline_list'))
-                        else:
-                            field_config.append_pipeline(None)
-                # verify that the memory interface is set
-                if 'memory_interface' in field_dict.keys():
-                    field_config.memory_interface = __object_extractor(
-                        field_dict['memory_interface'], 'memory_interface')
-
-                content_analyzer_config.append_field_config(field_dict["field_name"], field_config)
-
+        content_analyzer_config = ContentAnalyzerConfig(**__extract_parameters(content_config, ContentAnalyzerConfig))
         content_analyzer = ContentAnalyzer(content_analyzer_config)
         content_analyzer.fit()
-    except (KeyError, ValueError, TypeError) as e:
+    except (KeyError, ValueError, TypeError, FileNotFoundError) as e:
         raise e
 
 
-def __embedding_learner_run(config_dict: Dict):
+def __rating_config_run(config_dict: Dict):
     """
-    Method that extracts the parameters for the creation and fitting of an Embedding Learner. It checks the dictionary
-    for the various keys representing the parameters of the Embedding Learner and extracts their values
-
-    Args:
-        config_dict(dict): dictionary that represents a config defined in the config file, in this case it represents
-            the config of the embedding learner
-    """
-    try:
-        unspecified_parameters = []
-        if 'embedding_class' not in config_dict.keys():
-            unspecified_parameters.append('embedding_class')
-        if 'source_type' not in config_dict.keys():
-            unspecified_parameters.append('source_type')
-        if 'raw_source_path' not in config_dict.keys():
-            unspecified_parameters.append('raw_source_path')
-        if 'preprocessor' not in config_dict.keys():
-            unspecified_parameters.append('preprocessor')
-        if 'fields' not in config_dict.keys():
-            unspecified_parameters.append('fields')
-
-        if len(unspecified_parameters) != 0:
-            raise KeyError("The following obligatory parameters for Embedding Learner were not specified: " +
-                           str(unspecified_parameters))
-
-        source_type = config_dict['source_type'].lower()
-        preprocessor = __object_extractor(config_dict['preprocessor'], 'preprocessor')
-
-        if not isinstance(config_dict['fields'], list):
-            config_dict['fields'] = [config_dict['fields']]
-
-        optional_parameters = {}
-        if 'additional_parameters' in config_dict.keys():
-            if isinstance(config_dict['additional_parameters'], dict):
-                optional_parameters = config_dict['additional_parameters']
-            else:
-                raise ValueError("The field 'additional_parameters' must contain a dictionary")
-
-        embedding_learner = runnable_instances[config_dict['embedding_class']](
-            source=runnable_instances[source_type](file_path=config_dict["raw_source_path"]),
-            preprocessor=preprocessor,
-            field_list=config_dict['fields'],
-            kwargs=optional_parameters
-        )
-
-        if isinstance(embedding_learner, EmbeddingLearner):
-            embedding_learner.fit()
-            embedding_learner.save()
-
-    except (KeyError, ValueError, TypeError) as e:
-        raise e
-
-
-def __rating_config_run(config_dict: Dict) -> pd.DataFrame():
-    """
-    Method that extracts the parameters for the creation of a Ratings Importer. It checks the dictionary
-    for the various keys representing the parameters of the Ratings Importer and extracts their values
+    Method that extracts the parameters for the creation of a Ratings Importer and saves the DataFrame produced by
+    the method import_ratings()
 
     Args:
         config_dict (dict): dictionary that represents a config defined in the config file, in this case it
-            represents the config of the ratings importer
+            represents the config of the Ratings Importer
     """
     try:
-        for config_line in config_dict.keys():
-            if config_line not in ['source_type', 'fields', 'raw_source_path', 'output_directory',
-                                   'from_field_name', 'to_field_name', 'timestamp_field_name']:
-                logger.warning("%s is not a parameter for rating config, therefore it will be skipped" % config_line)
-
-        unspecified_parameters = []
-        if 'source_type' not in config_dict.keys():
-            unspecified_parameters.append('source_type')
-        if 'raw_source_path' not in config_dict.keys():
-            unspecified_parameters.append('raw_source_path')
-        if 'output_directory' not in config_dict.keys():
-            unspecified_parameters.append('output_directory')
-        if 'from_field_name' not in config_dict.keys():
-            unspecified_parameters.append('from_field_name')
-        if 'to_field_name' not in config_dict.keys():
-            unspecified_parameters.append('to_field_name')
-        if 'timestamp_field_name' not in config_dict.keys():
-            unspecified_parameters.append('timestamp_field_name')
-
-        if len(unspecified_parameters) != 0:
-            raise KeyError("The following obligatory parameters for Ratings Importer were not specified: " +
-                           str(unspecified_parameters))
-
-        rating_configs = []
-        source_type = config_dict['source_type'].lower()
-
-        if 'fields' in config_dict.keys():
-            if not isinstance(config_dict['fields'], list):
-                config_dict['fields'] = [config_dict['fields']]
-            for field in config_dict["fields"]:
-                processor = __object_extractor(field['processor'], 'processor')
-                rating_configs.append(
-                    RatingsFieldConfig(field_name=field["field_name"],
-                                       processor=processor)
-                )
-
-        return RatingsImporter(
-            source=runnable_instances[source_type](file_path=config_dict["raw_source_path"]),
-            output_directory=config_dict["output_directory"],
-            rating_configs=rating_configs,
-            from_field_name=config_dict["from_field_name"],
-            to_field_name=config_dict["to_field_name"],
-            timestamp_field_name=config_dict["timestamp_field_name"]
-        ).import_ratings()
-    except (KeyError, ValueError, TypeError) as e:
+        ratings_parameters = __extract_parameters(config_dict, RatingsImporter)
+        RatingsImporter(**ratings_parameters).import_ratings()
+    except (KeyError, ValueError, TypeError, FileNotFoundError) as e:
         raise e
 
 
 def __recsys_config_run(config_dict: Dict) -> RecSysConfig:
     """
-    Method that extracts the parameters for the creation of a Recsys Config. It checks the dictionary
-    for the various keys representing the parameters of the Recsys config and extracts their values
+    Method that extracts the parameters for the creation of a Recsys Config.
+
+    Since the recsys config is used by different modules (like recsys or eval model) it was made more dynamic
+    so that it can be easily re-used.
+    When the config_dict is passed, it should contain all the available parameters for the main module.
+    So, for example, if the recsys_config was being run for a recsys instance, the config_dict parameter should
+    contain not only the parameters for the recsys_config but also the parameters for the recsys.
+    The parameters in the config_dict for the recsys_config are removed and stored in a local dictionary.
+    By doing so, the recsys_config can be instantiated without problems and it is then returned.
 
     Args:
         config_dict (dict): dictionary that represents a config defined in the config file, in this case it represents
-            the config of the recommender system
+            the config of the recommender system and it can also contain other parameters from the main module
+            who needed the recsys config
+    Returns:
+        recsys_config (RecSysConfig): instance of the RecSysConfig instantiated from the extracted parameters
     """
     try:
-        unspecified_parameters = []
-        if 'users_directory' not in config_dict.keys():
-            unspecified_parameters.append('users_directory')
-        if 'items_directory' not in config_dict.keys():
-            unspecified_parameters.append('items_directory')
+        recsys_config_parameters = list(signature(RecSysConfig.__init__).parameters.keys())
+        recsys_config_parameters.remove("self")
 
-        if len(unspecified_parameters) != 0:
-            raise KeyError("The following obligatory parameters for Recsys Config were not specified: " +
-                           str(unspecified_parameters))
+        # extracts the parameters for the Recsys config from the dictionary passed as an argument
+        # and removes said parameters from said dictionary
+        recsys_config_dict = dict()
+        for config_line in config_dict.keys():
+            if config_line in recsys_config_parameters:
+                recsys_config_dict[config_line] = config_dict[config_line]
+        for recsys_config_parameter in recsys_config_dict.keys():
+            config_dict.pop(recsys_config_parameter)
 
-        users_directory = __complete_path(config_dict['users_directory'])
-        items_directory = __complete_path(config_dict['items_directory'])
-
-        if 'score_prediction_algorithm' in config_dict.keys():
-            score_prediction_algorithm = __object_extractor(
-                config_dict['score_prediction_algorithm'], 'score_prediction_algorithm')
-        else:
-            score_prediction_algorithm = None
-
-        if 'ranking_algorithm' in config_dict.keys():
-            ranking_algorithm = __object_extractor(config_dict['ranking_algorithm'], 'ranking_algorithm')
-        else:
-            ranking_algorithm = None
-
-        if 'rating_frame' in config_dict.keys():
-            if isinstance(config_dict['rating_frame'], str):
-                rating_frame = __complete_path(config_dict['rating_frame'])
-            else:
-                rating_frame = __rating_config_run(config_dict['rating_frame'])
-        else:
-            rating_frame = None
-
-        recsys_config = RecSysConfig(
-            users_directory=users_directory,
-            items_directory=items_directory,
-            score_prediction_algorithm=score_prediction_algorithm,
-            ranking_algorithm=ranking_algorithm,
-            rating_frame=rating_frame
-        )
-
+        recsys_parameters = __extract_parameters(recsys_config_dict, RecSysConfig)
+        recsys_config = RecSysConfig(**recsys_parameters)
         return recsys_config
     except (KeyError, ValueError, TypeError, FileNotFoundError) as e:
         raise e
 
 
-def __recsys_run(config_dict: Dict):
+def __recsys_run(config_dict: Dict) -> list:
     """
-    Method that extracts the parameters for the creation of a Recsys. It checks the dictionary
-    for the various keys representing the parameters of the Recsys and extracts their values. Also it allows
-    to define what kind of ranking or predictions the user wants from the recommender system.
-
-    N.B.: for now it prints the recsys run results, this will be improved
+    Method that extracts the parameters for the creation of a Recsys. Also it allows
+    to define what kind of ranking or predictions the user wants from the recommender system. In order to do so,
+    two additional parameters (not in the RecSys class constructor) are considered, the first being the
+    'predictions' parameter containing a list of parameters for the prediction algorithm, the second is
+    'rankings' which works as the first one but for the ranking algorithm.
 
     Args:
         config_dict (dict): dictionary that represents a config defined in the config file, in this case it represents
             the config of the predictions or rankings the user wants to run
+
+    Returns:
+        recsys_results (list): list containing two lists where the first one contains the results for the prediction
+        algorithm and the second one contains the results for the ranking algorithm
     """
     try:
-        for config_line in config_dict.keys():
-            if config_line not in ['users_directory', 'items_directory', 'score_prediction_algorithm',
-                                   'ranking_algorithm', 'rating_frame', 'predictions', 'rankings']:
-                logger.warning("%s is not a parameter for recsys run, therefore it will be skipped" % config_line)
+        recsys_config = __recsys_config_run(config_dict)
+        config_dict["config"] = recsys_config
 
-        recsys = RecSys(config=__recsys_config_run(config_dict))
-
+        # prediction and ranking parameters are extracted and the 'predictions' and 'rankings' keys are removed
+        # from the dictionary (since they aren't parameters for the RecSys constructor
+        prediction_parameters = []
         if 'predictions' in config_dict.keys():
             if not isinstance(config_dict['predictions'], list):
                 config_dict['predictions'] = [config_dict['predictions']]
-            for prediction_parameters in config_dict['predictions']:
-                user_id = prediction_parameters['user_id']
-                if 'item_to_predict_list' in prediction_parameters.keys():
-                    item_to_predict_id_list = prediction_parameters['item_to_predict_list']
-                else:
-                    item_to_predict_id_list = None
-                print(recsys.fit_predict(user_id, item_to_predict_id_list))
+            for prediction in config_dict['predictions']:
+                prediction_parameters.append(prediction)
+            config_dict.pop('predictions')
 
+        ranking_parameters = []
         if 'rankings' in config_dict.keys():
             if not isinstance(config_dict['rankings'], list):
                 config_dict['rankings'] = [config_dict['rankings']]
-            for ranking_parameters in config_dict['rankings']:
-                user_id = ranking_parameters['user_id']
-                recs_number = ranking_parameters['recs_number']
-                if 'candidate_item_id_list' in ranking_parameters.keys():
-                    candidate_item_id_list = ranking_parameters['candidate_item_id_list']
-                else:
-                    candidate_item_id_list = None
-                print(recsys.fit_ranking(user_id, recs_number, candidate_item_id_list))
+            for ranking in config_dict['rankings']:
+                ranking_parameters.append(ranking)
+            config_dict.pop('rankings')
+
+        recsys = RecSys(**__extract_parameters(config_dict, RecSys))
+
+        # predictions and rankings are computed and stored in two separate lists
+        prediction_results = []
+        for prediction in prediction_parameters:
+            prediction_results.append(recsys.fit_predict(**__extract_parameters(prediction, recsys.fit_predict)))
+
+        ranking_results = []
+        for ranking in ranking_parameters:
+            ranking_results.append(recsys.fit_ranking(**__extract_parameters(ranking, recsys.fit_ranking)))
+
+        recsys_results = list()
+        recsys_results.append(prediction_results)
+        recsys_results.append(ranking_results)
+        return recsys_results
 
     except (KeyError, ValueError, TypeError, FileNotFoundError) as e:
         raise e
 
 
-def __eval_config_run(config_dict: Dict):
+def __eval_config_run(config_dict: Dict) -> pd.DataFrame():
     """
-    Method that extracts the parameters for the creation of a Eval Model. It checks the dictionary
-    for the various keys representing the parameters of the Eval Model and extracts their values
-
-    N.B.: for now it prints the eval fitting results, this will be improved
+    Method that extracts the parameters for the creation of a Eval Model. In order to define what kind of eval_model
+    has to be run and the parameters for said model (ranking_alg, prediction_alg, report, ...), an additional parameter
+    is added to the config_dict, that being 'eval_type'. This allows the user to define what kind of eval model has to
+    be used (available in the runnable_instances file)
 
     Args:
-        config_dict (dict): dictionary that represents a config defined in the config file
+        config_dict (dict): dictionary that represents a config defined in the config file, in this case it represents
+        the config for the Eval Model
+    Returns:
+        eval_results (pd.DataFrame): dataframe containing the results for the eval process for the metrics defined in
+        the metric_list
     """
     try:
-        for config_line in config_dict.keys():
-            if config_line not in ['content_type', 'users_directory', 'items_directory', 'score_prediction_algorithm',
-                                   'ranking_algorithm', 'rating_frame', 'metric_list', 'partitioning', 'recs_number']:
-                logger.warning("%s is not a parameter for eval model, therefore it will be skipped"
-                               % config_line)
-
-        unspecified_parameters = []
-        if 'partitioning' not in config_dict.keys():
-            unspecified_parameters.append('partitioning')
-
-        if len(unspecified_parameters) != 0:
-            raise KeyError("The following obligatory parameters for Eval Model were not specified: " +
-                           str(unspecified_parameters))
-
         recsys_config = __recsys_config_run(config_dict)
+        config_dict["config"] = recsys_config
 
-        eval_class = config_dict["content_type"].lower()
+        if "eval_type" not in config_dict.keys():
+            raise KeyError("Eval model class type must be defined in order to use the module")
+        eval_class = config_dict.pop("eval_type").lower()
+        eval_class = runnable_instances[eval_class]
 
-        metric_list = []
-        if "metric_list" in config_dict.keys():
-            if not isinstance(config_dict['metric_list'], list):
-                config_dict['metric_list'] = [config_dict['metric_list']]
-            for metric in config_dict["metric_list"]:
-                metric = __object_extractor(metric, 'metric')
-                metric_list.append(metric)
+        eval_parameters = __extract_parameters(config_dict, eval_class)
+        eval_model = eval_class(**eval_parameters)
+        return eval_model.fit()
 
-        if eval_class.lower() == "prediction_alg_eval_model" or eval_class.lower() == "ranking_alg_eval_model":
-            partitioning = __object_extractor(config_dict['partitioning'], 'partitioning')
-
-            eval_model = runnable_instances[eval_class](recsys_config, partitioning, metric_list)
-            print(eval_model.fit())
-
-        else:
-            recs_number = config_dict['recs_number']
-
-            eval_model = runnable_instances[eval_class](recsys_config, recs_number, metric_list)
-            print(eval_model.fit())
     except (KeyError, ValueError, TypeError, FileNotFoundError) as e:
         raise e
+
+
+implemented_modules = {
+    "content_analyzer": __content_config_run,
+    "ratings": __rating_config_run,
+    "recsys": __recsys_run,
+    "eval": __eval_config_run
+}
 
 
 def script_run(config_list_dict: Union[dict, list]):
@@ -528,10 +327,17 @@ def script_run(config_list_dict: Union[dict, list]):
     Method that controls the entire process of script running. It checks that the contents loaded from a script match
     the required prerequisites. The data must contain dictionaries and each dictionary must have a "module" key
     that is used to understand what kind of operation it is supposed to perform (if it's meant for a Recommender System,
-    a Content Analyzer, ...). If any of these prerequisites aren't matched a ValueError or KeyError exception is thrown
+    a Content Analyzer, ...). If any of these prerequisites aren't matched a ValueError or KeyError exception is thrown.
+
+    If any of the functions (made for the modules) returns anything (could be the results of the predict method in the
+    Recsys), the return value is stored in a list which is then returned at the end of the script processing
 
     Args:
         config_list_dict: single dictionary or list of dictionaries extracted from the config file
+
+    Returns:
+        script_results (list): list containing the results returned by some of the functions (for example, it contains
+        the results of the RecSys or of the EvalModel)
     """
     try:
 
@@ -541,31 +347,26 @@ def script_run(config_list_dict: Union[dict, list]):
         if not all(isinstance(config_dict, dict) for config_dict in config_list_dict):
             raise ValueError("The list in the script must contain dictionaries only")
 
+        script_results = []
         for config_dict in config_list_dict:
 
             if "module" in config_dict.keys():
-                if config_dict["module"].lower() == "rating":
-                    del config_dict["module"]
-                    __rating_config_run(config_dict)
-                elif config_dict["module"].lower() == "content_analyzer":
-                    del config_dict["module"]
-                    __content_config_run(config_dict)
-                elif config_dict["module"].lower() == "recsys":
-                    del config_dict["module"]
-                    __recsys_run(config_dict)
-                elif config_dict["module"].lower() == "eval_model":
-                    del config_dict["module"]
-                    __eval_config_run(config_dict)
-                elif config_dict["module"].lower() == "embedding_learner":
-                    del config_dict["module"]
-                    __embedding_learner_run(config_dict)
+                if config_dict["module"] in implemented_modules:
+                    module = config_dict.pop("module")
+                    returned_results = implemented_modules[module](config_dict)
+                    if returned_results is not None:
+                        if isinstance(returned_results, list):
+                            for returned_result in returned_results:
+                                script_results.append(returned_result)
+                        else:
+                            script_results.append(returned_results)
                 else:
-                    raise ValueError("You must specify a valid module: "
-                                     "[rating, content_analyzer, recsys, eval_model]")
-
+                    raise ValueError("You must specify a valid module: " + str(implemented_modules.keys()))
             else:
-                raise KeyError("A 'module' parameter must be specified and the value must be one of the following: "
-                               "[rating, content_analyzer, recsys, eval_model]")
+                raise KeyError("A 'module' parameter must be specified and the value must be one of the following: " +
+                               str(implemented_modules.keys()))
+
+        return script_results
 
     except (KeyError, ValueError, TypeError, FileNotFoundError) as e:
         raise e
@@ -584,4 +385,4 @@ if __name__ == "__main__":
     else:
         raise ValueError("Wrong file extension")
 
-    script_run(extracted_data)
+    results = script_run(extracted_data)

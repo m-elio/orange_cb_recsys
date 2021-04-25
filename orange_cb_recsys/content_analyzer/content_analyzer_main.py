@@ -187,7 +187,6 @@ class ContentsProducer:
         Returns:
             field (ContentField)
         """
-        print(content_id)
         if isinstance(raw_content[field_name], list):
             timestamp = raw_content[field_name][1]
             field_data = raw_content[field_name][0]
